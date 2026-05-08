@@ -1,74 +1,70 @@
 import { NextResponse } from 'next/server';
-import sql from 'mssql';
 
-let rawServer = process.env.DB_SERVER || 'localhost';
-let parsedPort = 1433;
-if (rawServer.includes(':')) {
-    const parts = rawServer.split(':');
-    rawServer = parts[0];
-    parsedPort = parseInt(parts[1], 10);
-}
-
-const sqlConfig = {
-    user: process.env.DB_USER as string,
-    password: process.env.DB_PASSWORD as string,
-    database: process.env.DB_DATABASE as string,
-    server: rawServer,
-    port: parsedPort,
-    pool: {
-        max: 10,
-        min: 0,
-        idleTimeoutMillis: 30000
-    },
-    options: {
-        encrypt: false, 
-        trustServerCertificate: true 
-    }
-};
 
 export async function GET() {
     try {
-        await sql.connect(sqlConfig);
+        const username = process.env.MAXIMO_USER;
+        const password = process.env.MAXIMO_PASS;
         
-        // Exact user query 
-        const maximoQuery = `
-            SELECT 
-                wo.wonum as id,
-                wo.description as title,
-                wo.worktype,
-                t.ticketid,
-                t.customworktype,
-                t.reportedpriority as ticketPriority,
-                t.urgency,
-                wo.statusdate,
-                t.vendor as customer,
-                wo.location,
-                loc.description as projectName,
-                loc.region as explicitRegion,
-                wo.estdur,
-                sa.formattedaddress,
-                sa.streetaddress,
-                sa.city,
-                sa.stateprovince,
-                sa.postalcode
-            FROM woadditionalresource ar
-            JOIN workorder wo ON wo.wonum=ar.wonum AND ar.status='None' AND wo.status='NEWWO'
-            JOIN ticket t ON t.ticketid=wo.origrecordid
-            LEFT JOIN locations loc ON loc.location = wo.location
-            LEFT JOIN serviceaddress sa ON sa.addresscode = loc.location
-            WHERE t.status IN ('STAGE6', 'STAGE6B')
-        `;
+        if (!username || !password) {
+            return NextResponse.json({ error: 'Maximo credentials not configured in .env.local' }, { status: 500 });
+        }
 
-        const result = await sql.query(maximoQuery);
+        const encodedAuth = Buffer.from(`${username}:${password}`).toString('base64');
+        
+        const selectParams = 'wonum,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode}';
+        const maximoUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=status="NEWWO"&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=100`;
+
+        const response = await fetch(maximoUrl, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'maxauth': encodedAuth,
+                'x-public-uri': 'https://cleanleafmax.softwrench2.com/maximo/oslc'
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Maximo API returned ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        const members = data['rdfs:member'] || data.member || [];
+        
+        const rawRecords = members.map((wo: any) => {
+             const addr = (wo['spi:woserviceaddress'] && wo['spi:woserviceaddress'][0]) || {};
+             
+             return {
+                 id: wo['spi:wonum'],
+                 title: wo['spi:description'] || `Work Order ${wo['spi:wonum']}`,
+                 worktype: wo['spi:worktype'] || 'CM',
+                 ticketid: wo['spi:origrecordid'] || 'N/A',
+                 customworktype: wo['spi:jobtype_description'] || 'O&M', 
+                 ticketPriority: wo['spi:wopriority'] || 3,
+                 urgency: 3, 
+                 statusdate: wo['spi:statusdate'] || new Date().toISOString(),
+                 customer: wo['spi:client'] || wo['spi:vendor'] || 'Unknown Client', 
+                 location: wo['spi:location'] || 'UNKNOWN',
+                 projectName: addr['spi:description'] || wo['spi:location'] || 'Unknown Project',
+                 explicitRegion: addr['spi:stateprovince'] === 'NC' ? 'East' : 'Midwest', // Rough fallback
+                 estdur: wo['spi:estdur'] || 2,
+                 formattedaddress: [addr['spi:streetaddress'], addr['spi:city'], addr['spi:stateprovince']].filter(Boolean).join(', ') || 'Unknown Address', 
+                 streetaddress: addr['spi:streetaddress'] || 'Unknown',
+                 city: addr['spi:city'] || 'Unknown',
+                 stateprovince: addr['spi:stateprovince'] || 'Unknown',
+                 postalcode: addr['spi:postalcode'] || 'Unknown'
+             };
+        });
         
         const clusterMap = new Map<string, number>();
-        result.recordset.forEach((row: any) => {
+        rawRecords.forEach((row: any) => {
              const loc = row.location || 'UNKNOWN';
              clusterMap.set(loc, (clusterMap.get(loc) || 0) + 1);
         });
 
         // The Dynamic Scoring Engine
-        const mappedOrders = result.recordset.map((row: any, idx: number) => {
+        const mappedOrders = rawRecords.map((row: any, idx: number) => {
             // Priority Mapping
             const priVal = row.ticketPriority || 3;
             let baseScore = 0;

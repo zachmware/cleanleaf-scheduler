@@ -1,78 +1,72 @@
 import { NextResponse } from 'next/server';
-import sql from 'mssql';
-
-let rawServer = process.env.DB_SERVER || 'localhost';
-let parsedPort = 1433;
-if (rawServer.includes(':')) {
-    const parts = rawServer.split(':');
-    rawServer = parts[0];
-    parsedPort = parseInt(parts[1], 10);
-}
-
-const sqlConfig = {
-    user: process.env.DB_USER as string,
-    password: process.env.DB_PASSWORD as string,
-    database: process.env.DB_DATABASE as string,
-    server: rawServer,
-    port: parsedPort,
-    pool: {
-        max: 10,
-        min: 0,
-        idleTimeoutMillis: 30000
-    },
-    options: {
-        encrypt: false, 
-        trustServerCertificate: true 
-    }
-};
 
 export async function GET() {
     try {
-        await sql.connect(sqlConfig);
+        const username = process.env.MAXIMO_USER;
+        const password = process.env.MAXIMO_PASS;
         
-        const maximoQuery = `
-            SELECT 
-                p.personid AS id, 
-                p.displayname AS name, 
-                p.timezone, 
-                pgt.persongroup AS region,
-                p.addressline1,
-                p.city,
-                p.stateprovince,
-                p.postalcode
-            FROM person p
-            JOIN labor l ON l.personid = p.personid
-            JOIN laborcraftrate lcr ON lcr.laborcode = l.laborcode
-            JOIN persongroupteam pgt ON pgt.respparty = p.personid 
-                 AND pgt.persongroup IN (SELECT DISTINCT region FROM locations WHERE region IS NOT NULL)
-            WHERE lcr.craft = 'SOLAR_ELECTRICIAN_1'
-            ORDER BY p.displayname ASC
-        `;
+        if (!username || !password) {
+            return NextResponse.json({ error: 'Maximo credentials not configured in .env.local' }, { status: 500 });
+        }
 
-        const result = await sql.query(maximoQuery);
+        const encodedAuth = Buffer.from(`${username}:${password}`).toString('base64');
+        
+        // We will query MXLABOR and expand the PERSON object to get address details.
+        // If your Maximo system has a custom Object Structure for this, we can update the URL.
+        const maximoUrl = 'https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxlabor?oslc.select=laborcode,person{personid,displayname,timezone,addressline1,city,stateprovince,postalcode},laborcraftrate{craft}&oslc.pageSize=200';
+
+        const response = await fetch(maximoUrl, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'maxauth': encodedAuth,
+                'x-public-uri': 'https://cleanleafmax.softwrench2.com/maximo/oslc'
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Maximo API returned ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
         
         const deduplicatedMap = new Map<string, any>();
         
-        result.recordset.forEach((row: any) => {
-            if (!deduplicatedMap.has(row.id)) {
-                // Dynamically compile physical string, purging null segments natively
-                const addressNode = [row.addressline1, row.city, row.stateprovince].filter(Boolean).join(', ');
-                const finalAddressString = addressNode ? `${addressNode} ${row.postalcode || ''}`.trim() : null;
+        // Process the OSLC response
+        const members = data['rdfs:member'] || data.member || [];
+        
+        members.forEach((labor: any) => {
+            // Filter by craft
+            const crafts = labor['spi:laborcraftrate'] || [];
+            const hasCorrectCraft = crafts.some((c: any) => c['spi:craft'] === 'SOLAR_ELECTRICIAN_1');
+            
+            if (!hasCorrectCraft) return;
 
-                deduplicatedMap.set(row.id, {
-                    id: row.id,
-                    name: row.name || 'Unknown Tech',
-                    timezone: row.timezone || 'America/New_York', // Natively map timezone
-                    region: row.region || 'DEFAULT', // Used for region bucket allocation logic
-                    homeAddress: finalAddressString || row.region || 'Unknown', 
-                    skills: ['SOLAR_ELECTRICIAN_1']
+            const person = (labor['spi:person'] && labor['spi:person'][0]) || {};
+            const personId = person['spi:personid'] || labor['spi:laborcode'];
+            
+            if (!deduplicatedMap.has(personId)) {
+                // Dynamically compile physical string, purging null segments natively
+                const addressNode = [person['spi:addressline1'], person['spi:city'], person['spi:stateprovince']].filter(Boolean).join(', ');
+                const finalAddressString = addressNode ? `${addressNode} ${person['spi:postalcode'] || ''}`.trim() : null;
+
+                deduplicatedMap.set(personId, {
+                    id: personId,
+                    name: person['spi:displayname'] || labor['spi:laborcode'] || 'Unknown Tech',
+                    timezone: person['spi:timezone'] || 'America/New_York', // Natively map timezone
+                    region: 'Midwest', // Hardcoded fallback for now until we map persongroupteam via OSLC
+                    homeAddress: finalAddressString || 'Unknown', 
+                    skills: crafts.map((c: any) => c['spi:craft']).filter(Boolean)
                 });
             }
         });
 
         const finalRoster = Array.from(deduplicatedMap.values());
         return NextResponse.json(finalRoster);
+        
     } catch (err: any) {
-        return NextResponse.json({ error: 'Database connection failed', details: err.message }, { status: 500 });
+        console.error("Technician API Error:", err);
+        return NextResponse.json({ error: 'Maximo API connection failed', details: err.message }, { status: 500 });
     }
 }

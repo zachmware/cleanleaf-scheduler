@@ -454,7 +454,7 @@ export default function SchedulerDashboard() {
             {dbError && (
                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', color: '#ef4444', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
                  <strong>Maximo Connection Failed:</strong> {dbError}
-                 <p style={{ margin: '4px 0 0', fontSize: '0.85rem', opacity: 0.8 }}>Ensure you are connected to the network where sqlprod2.softwrench2.com is hosted, or verify your .env.local credentials.</p>
+                 <p style={{ margin: '4px 0 0', fontSize: '0.85rem', opacity: 0.8 }}>Ensure you are connected to the network where sqlprod3.softwrench2.com is hosted, or verify your .env.local credentials.</p>
                </div>
             )}
             <GanttTimeline 
