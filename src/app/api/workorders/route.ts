@@ -15,7 +15,7 @@ export async function GET() {
         const encodedAuth = Buffer.from(`${username}:${password}`).toString('base64');
         
         const selectParams = 'wonum,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode}';
-        const maximoUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=status="NEWWO"&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=100`;
+        const maximoUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=status="NEWWO" and origrecordid="*"&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=100`;
 
         const response = await fetch(maximoUrl, {
             method: 'GET',

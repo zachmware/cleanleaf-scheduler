@@ -10,12 +10,11 @@ async function testMaximo() {
         'maxauth': encodedAuth,
         'x-public-uri': 'https://cleanleafmax.softwrench2.com/maximo/oslc'
     };
-
     try {
-        console.log("Testing MXLABOR craft filter...");
-        const resLabor = await fetch('https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxlabor?oslc.select=laborcode,laborcraftrate{craft}&oslc.pageSize=5', { headers });
-        const dataLabor = await resLabor.json();
-        console.log("Labor keys:", JSON.stringify(dataLabor['rdfs:member'], null, 2));
+        console.log("Testing MXAPIWODETAIL for NEWWO with tickets...");
+        const resWO = await fetch('https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=status="NEWWO" and origrecordid="*"&oslc.select=wonum,origrecordid,origrecordclass,ticketid&oslc.pageSize=5', { headers });
+        const dataWO = await resWO.json();
+        console.log("WO with ticket data:", JSON.stringify(dataWO['rdfs:member'], null, 2));
     } catch (e) {
         console.error("Query Failed:", e.message);
     }
