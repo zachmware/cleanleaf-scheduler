@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const revalidate = 300; // Cache the Maximo response for 5 minutes
+
 
 export async function GET() {
     try {
