@@ -11,10 +11,12 @@ async function testMaximo() {
         'x-public-uri': 'https://cleanleafmax.softwrench2.com/maximo/oslc'
     };
     try {
-        console.log("Testing MXAPIWODETAIL for NEWWO with tickets...");
-        const resWO = await fetch('https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=status="NEWWO" and origrecordid="*"&oslc.select=wonum,origrecordid,origrecordclass,ticketid&oslc.pageSize=5', { headers });
+        console.log("Testing exact application query...");
+        const selectParams = 'wonum,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode}';
+        const maximoUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=status="NEWWO" and origrecordid="*"&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=1`;
+        const resWO = await fetch(maximoUrl, { headers });
         const dataWO = await resWO.json();
-        console.log("WO with ticket data:", JSON.stringify(dataWO['rdfs:member'], null, 2));
+        console.log("WO details:", JSON.stringify(dataWO['rdfs:member'], null, 2));
     } catch (e) {
         console.error("Query Failed:", e.message);
     }

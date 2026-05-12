@@ -8,8 +8,8 @@ import GanttTimeline from './GanttTimeline';
 import { Settings, Play, CalendarDays } from 'lucide-react';
 
 export default function SchedulerDashboard() {
-  const [rtsOrders, setRtsOrders] = useState<WorkOrder[]>(mockRTSWorkOrders);
-  const [scheduledOrders, setScheduledOrders] = useState<WorkOrder[]>(mockScheduledOrders);
+  const [rtsOrders, setRtsOrders] = useState<WorkOrder[]>([]);
+  const [scheduledOrders, setScheduledOrders] = useState<WorkOrder[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [viewDays, setViewDays] = useState<number>(2); // Default to 2 days
   const [viewOffsetDays, setViewOffsetDays] = useState<number>(0);
@@ -385,7 +385,11 @@ export default function SchedulerDashboard() {
 
       <div className="app-container">
         <div className="sidebar">
-          <SidebarRTS orders={rtsOrders} />
+          {isLoadingDB ? (
+            <div style={{ padding: '24px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '40px' }}>Loading Cases...</div>
+          ) : (
+            <SidebarRTS orders={rtsOrders} />
+          )}
         </div>
         
         <div className="main-content">
@@ -457,13 +461,28 @@ export default function SchedulerDashboard() {
                  <p style={{ margin: '4px 0 0', fontSize: '0.85rem', opacity: 0.8 }}>Ensure you are connected to the network where sqlprod3.softwrench2.com is hosted, or verify your .env.local credentials.</p>
                </div>
             )}
-            <GanttTimeline 
-               days={viewDays} 
-               offsetDays={viewOffsetDays}
-               technicians={technicians} 
-               scheduledOrders={scheduledOrders} 
-               onUnschedule={handleUnschedule}
-            />
+            
+            {isLoadingDB ? (
+               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '300px', gap: '20px', color: 'var(--text-main)' }}>
+                 <div style={{ 
+                   width: '48px', height: '48px', 
+                   border: '4px solid var(--border-color)', 
+                   borderTop: '4px solid var(--primary)', 
+                   borderRadius: '50%', 
+                   animation: 'spin 1s linear infinite' 
+                 }}></div>
+                 <p style={{ fontSize: '1.2rem', fontWeight: 600 }}>Please wait while the Maximo query is processed...</p>
+                 <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+               </div>
+            ) : (
+               <GanttTimeline 
+                  days={viewDays} 
+                  offsetDays={viewOffsetDays}
+                  technicians={technicians} 
+                  scheduledOrders={scheduledOrders} 
+                  onUnschedule={handleUnschedule}
+               />
+            )}
           </div>
         </div>
       </div>
