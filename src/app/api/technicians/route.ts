@@ -41,7 +41,7 @@ export async function GET() {
         members.forEach((labor: any) => {
             // Filter by craft
             const crafts = labor['spi:laborcraftrate'] || [];
-            const hasCorrectCraft = crafts.some((c: any) => c['spi:craft'] === 'SOLAR_ELECTRICIAN_1');
+            const hasCorrectCraft = crafts.some((c: any) => c['spi:craft'] === 'SOLAR_ELECTRICIAN_1' || c['spi:craft'] === 'TECH');
             
             if (!hasCorrectCraft) return;
 

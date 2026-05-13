@@ -11,12 +11,11 @@ async function testMaximo() {
         'x-public-uri': 'https://cleanleafmax.softwrench2.com/maximo/oslc'
     };
     try {
-        console.log("Testing IN operator for wonum...");
-        const selectParams = 'wonum,description,status';
-        const maximoUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=wonum in ["150700","135791"]&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=5`;
-        const resWO = await fetch(maximoUrl, { headers });
-        const dataWO = await resWO.json();
-        console.log("Response:", JSON.stringify(dataWO['rdfs:member'], null, 2));
+        console.log("Testing mxlabor for GENERALLABOR...");
+        const maximoUrl = 'https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxlabor?oslc.where=laborcode="GENERALLABOR"&oslc.select=laborcode,person{personid},laborcraftrate{craft}';
+        const response = await fetch(maximoUrl, { headers });
+        const data = await response.json();
+        console.log("Labor:", JSON.stringify(data['rdfs:member'], null, 2));
     } catch (e) {
         console.error("Query Failed:", e.message);
     }

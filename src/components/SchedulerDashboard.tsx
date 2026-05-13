@@ -38,6 +38,11 @@ export default function SchedulerDashboard() {
          if (woData && woData.rtsOrders) {
              setRtsOrders(woData.rtsOrders);
              setScheduledOrders(woData.scheduledOrders || []);
+             
+             if (woData.scheduledOrders && woData.scheduledOrders.length > 0) {
+                 const mostRecentDateStr = woData.scheduledOrders[0].startTime.split('T')[0];
+                 setTargetDateStr(mostRecentDateStr);
+             }
          } else if (woData && Array.isArray(woData)) {
              setRtsOrders(woData); // Fallback for cached legacy response
          }
