@@ -35,7 +35,12 @@ export default function SchedulerDashboard() {
             return res.json();
         })
      ]).then(([woData, techData]) => {
-         if (woData && Array.isArray(woData)) setRtsOrders(woData);
+         if (woData && woData.rtsOrders) {
+             setRtsOrders(woData.rtsOrders);
+             setScheduledOrders(woData.scheduledOrders || []);
+         } else if (woData && Array.isArray(woData)) {
+             setRtsOrders(woData); // Fallback for cached legacy response
+         }
          if (techData && Array.isArray(techData)) setTechnicians(techData);
      })
       .catch(e => {
