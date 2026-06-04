@@ -11,14 +11,12 @@ async function testMaximo() {
         'x-public-uri': 'https://cleanleafmax.softwrench2.com/maximo/oslc'
     };
     try {
-        console.log("Testing recent 200 WOADDITIONALRESOURCE for None...");
-        const maximoUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=200&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`;
+        console.log("Testing MBO REST API for alndomain...");
+        const maximoUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/alndomain?_format=json&_maxItems=50&domainid=~eq~REGION`;
         const resWO = await fetch(maximoUrl, { headers });
         if (resWO.ok) {
             const dataWO = await resWO.json();
-            const arr = dataWO.WOADDITIONALRESOURCEMboSet.WOADDITIONALRESOURCE;
-            const noneCount = arr.filter(a => a.Attributes.STATUS && a.Attributes.STATUS.content === 'None').length;
-            console.log(`Found ${noneCount} 'None' records in the last 200 created resources.`);
+            console.log("MBO Response:", JSON.stringify(dataWO, null, 2).substring(0, 5000));
         } else {
             console.log("MBO Failed:", await resWO.text());
         }
