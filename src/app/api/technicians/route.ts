@@ -53,11 +53,14 @@ export async function GET() {
                 const addressNode = [person['spi:addressline1'], person['spi:city'], person['spi:stateprovince']].filter(Boolean).join(', ');
                 const finalAddressString = addressNode ? `${addressNode} ${person['spi:postalcode'] || ''}`.trim() : null;
 
+                const stateProvince = (person['spi:stateprovince'] || '').toUpperCase();
+                const mappedRegion = stateProvince === 'NC' ? 'Mid-Atlantic' : 'Midwest';
+
                 deduplicatedMap.set(personId, {
                     id: personId,
                     name: person['spi:displayname'] || labor['spi:laborcode'] || 'Unknown Tech',
                     timezone: person['spi:timezone'] || 'America/New_York', // Natively map timezone
-                    region: 'Midwest', // Hardcoded fallback for now until we map persongroupteam via OSLC
+                    region: mappedRegion, 
                     homeAddress: finalAddressString || 'Unknown', 
                     skills: crafts.map((c: any) => c['spi:craft']).filter(Boolean)
                 });

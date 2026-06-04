@@ -227,8 +227,9 @@ function TimezoneGroup({ tz, techs, dates, scheduledOrders, onUnschedule }: any)
                  const todaysOrdersForTech = scheduledOrders
                     .filter((o: WorkOrder) => {
                        if (!o.startTime || o.assignedTechId !== tech.id) return false;
-                       const parts = (o.checkInTime || o.startTime).split('T');
-                       return parts[0] === dateStr;
+                       const d = new Date(o.checkInTime || o.startTime);
+                       const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                       return localDateStr === dateStr;
                     })
                     .sort((a: WorkOrder, b: WorkOrder) => {
                        const aStart = new Date(a.checkInTime || a.startTime!).getTime();
@@ -257,10 +258,8 @@ function TimezoneGroup({ tz, techs, dates, scheduledOrders, onUnschedule }: any)
                  <div key={di} style={{ display: 'flex', flex: 1 }}>
                     {hoursList.map(hour => {
                        const orderInSlot = todaysOrdersForTech.find((o: WorkOrder) => {
-                          const anchorTime = o.checkInTime || o.startTime!;
-                          const parts = anchorTime.split('T');
-                          const oHour = parseInt(parts[1].split(':')[0], 10);
-                          return oHour === hour;
+                          const dAnchor = new Date(o.checkInTime || o.startTime!);
+                          return dAnchor.getHours() === hour;
                        });
 
                        const context = orderInSlot ? orderContextMap.get(orderInSlot.id) : null;
@@ -343,7 +342,7 @@ export default function GanttTimeline({ days, offsetDays = 0, technicians, sched
            
            return (
               <div key={region}>
-                 <div style={{ padding: '12px 16px', backgroundColor: 'rgba(59, 130, 246, 0.1)', fontSize: '1.2rem', fontWeight: 700, color: 'var(--primary)', borderBottom: '1px solid var(--border-color)' }}>
+                 <div style={{ position: 'sticky', top: '56px', zIndex: 90, padding: '12px 16px', backgroundColor: '#eef2ff', fontSize: '1.2rem', fontWeight: 700, color: 'var(--primary)', borderBottom: '1px solid var(--border-color)' }}>
                     {region} Region
                  </div>
                  {/* Render Timezones sequentially beneath the region */}

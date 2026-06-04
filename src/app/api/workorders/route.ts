@@ -18,7 +18,7 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
             customer: wo['spi:client'] || wo['spi:vendor'] || 'Unknown Client', 
             location: wo['spi:location'] || 'UNKNOWN',
             projectName: addr['spi:description'] || wo['spi:location'] || 'Unknown Project',
-            explicitRegion: addr['spi:stateprovince'] === 'NC' ? 'East' : 'Midwest', 
+            explicitRegion: (addr['spi:stateprovince'] || '').toUpperCase() === 'NC' ? 'Mid-Atlantic' : 'Midwest', 
             estdur: wo['spi:estdur'] || 2,
             formattedaddress: [addr['spi:streetaddress'], addr['spi:city'], addr['spi:stateprovince']].filter(Boolean).join(', ') || 'Unknown Address', 
             streetaddress: addr['spi:streetaddress'] || 'Unknown',
