@@ -78,13 +78,19 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
         let startTime = undefined;
 
         if (isScheduled && assignments) {
-            const assignment = assignments.find((a: any) => a['spi:wonum'] === row.id);
+            // assignments is an array of MBO records: a.Attributes.WONUM.content
+            const assignment = assignments.find((a: any) => a.Attributes.WONUM.content === row.id);
             if (assignment) {
-                finalStatus = 'SCHEDULED';
-                assignedTechId = assignment['spi:laborcode'];
-                startTime = assignment['spi:scheduledate'];
-                if (assignment['spi:laborhrs'] && typeof assignment['spi:laborhrs'] === 'number') {
-                    strictDuration = assignment['spi:laborhrs'];
+                finalStatus = assignment.Attributes.STATUS?.content || 'Scheduled';
+                assignedTechId = assignment.Attributes.PERSONID?.content;
+                startTime = assignment.Attributes.SCHEDSTART?.content;
+                
+                if (assignment.Attributes.SCHEDFINISH && assignment.Attributes.SCHEDSTART) {
+                    const sStart = new Date(assignment.Attributes.SCHEDSTART.content).getTime();
+                    const sFinish = new Date(assignment.Attributes.SCHEDFINISH.content).getTime();
+                    if (sFinish > sStart) {
+                        strictDuration = (sFinish - sStart) / (1000 * 60 * 60);
+                    }
                 }
             }
         }
@@ -132,52 +138,64 @@ export async function GET() {
             'x-public-uri': 'https://cleanleafmax.softwrench2.com/maximo/oslc'
         };
         
-        const selectParams = 'wonum,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode}';
-        
-        // 1. Fetch RTS Work Orders
-        const maximoUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=status="NEWWO" and origrecordid="*"&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=100`;
-        const response = await fetch(maximoUrl, { method: 'GET', headers });
-        if (!response.ok) {
-            throw new Error(`Maximo API returned ${response.status}: ${await response.text()}`);
+        // 1. Fetch "None" resources (Side RTS)
+        // We order by WOADDITIONALRESOURCEID desc to get the most recently created resources
+        const sideUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=300&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`;
+        const resSide = await fetch(sideUrl, { method: 'GET', headers });
+        let rtsResources: any[] = [];
+        if (resSide.ok) {
+            const dataSide = await resSide.json();
+            const allSide = dataSide.WOADDITIONALRESOURCEMboSet.WOADDITIONALRESOURCE || [];
+            rtsResources = allSide.filter((a: any) => a.Attributes.STATUS && a.Attributes.STATUS.content === 'None');
         }
-        const data = await response.json();
-        const rtsMembers = data['rdfs:member'] || data.member || [];
 
-        // 2. Fetch Active Assignments
-        const assignUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiassignment?oslc.where=status!="NONE"&oslc.select=wonum,laborcode,status,scheduledate,laborhrs&oslc.pageSize=100&oslc.orderBy=-scheduledate`;
-        const resAssign = await fetch(assignUrl, { method: 'GET', headers });
-        let assignments: any[] = [];
-        let scheduledMembers: any[] = [];
+        // 2. Fetch "Scheduled" resources (Gantt)
+        // We order by SCHEDSTART desc to get the most recently scheduled items
+        const schedUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=500&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`;
+        const resSched = await fetch(schedUrl, { method: 'GET', headers });
+        let scheduledResources: any[] = [];
+        if (resSched.ok) {
+            const dataSched = await resSched.json();
+            const allSched = dataSched.WOADDITIONALRESOURCEMboSet.WOADDITIONALRESOURCE || [];
+            scheduledResources = allSched.filter((a: any) => a.Attributes.STATUS && a.Attributes.STATUS.content !== 'None' && a.Attributes.SCHEDSTART);
+        }
 
-        if (resAssign.ok) {
-            const dataAssign = await resAssign.json();
-            assignments = dataAssign['rdfs:member'] || dataAssign.member || [];
-            
-            const wonums = Array.from(new Set(assignments.map((a: any) => a['spi:wonum']).filter(Boolean)));
-            
-            if (wonums.length > 0) {
-                // Chunk to avoid long URLs
-                for (let i = 0; i < wonums.length; i += 25) {
-                    const chunk = wonums.slice(i, i + 25);
-                    const wonumStr = chunk.map((w: any) => `"${w}"`).join(',');
-                    const schedUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=wonum in [${wonumStr}]&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=50`;
-                    const resSched = await fetch(schedUrl, { method: 'GET', headers });
-                    if (resSched.ok) {
-                        const dataSched = await resSched.json();
-                        scheduledMembers = scheduledMembers.concat(dataSched['rdfs:member'] || dataSched.member || []);
-                    }
+        // 3. Extract unique WONUMs from both lists
+        const rtsWonums = rtsResources.map((a: any) => a.Attributes.WONUM.content).filter(Boolean);
+        const schedWonums = scheduledResources.map((a: any) => a.Attributes.WONUM.content).filter(Boolean);
+        const allUniqueWonums = Array.from(new Set([...rtsWonums, ...schedWonums]));
+
+        // 4. Fetch WO Details for those WONUMs via OSLC
+        const selectParams = 'wonum,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode}';
+        let woDetails: any[] = [];
+        
+        if (allUniqueWonums.length > 0) {
+            // Chunk to avoid long URLs (Max 30 wonums per request)
+            for (let i = 0; i < allUniqueWonums.length; i += 30) {
+                const chunk = allUniqueWonums.slice(i, i + 30);
+                const wonumStr = chunk.map(w => `"${w}"`).join(',');
+                const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=wonum in [${wonumStr}]&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=100`;
+                const resOs = await fetch(osUrl, { method: 'GET', headers });
+                if (resOs.ok) {
+                    const dataOs = await resOs.json();
+                    woDetails = woDetails.concat(dataOs['rdfs:member'] || dataOs.member || []);
                 }
             }
         }
 
         const clusterMap = new Map<string, number>();
-        [...rtsMembers, ...scheduledMembers].forEach((wo: any) => {
+        woDetails.forEach((wo: any) => {
              const loc = wo['spi:location'] || 'UNKNOWN';
              clusterMap.set(loc, (clusterMap.get(loc) || 0) + 1);
         });
 
-        const rtsOrders = processRawRecords(rtsMembers, clusterMap, false);
-        const scheduledOrders = processRawRecords(scheduledMembers, clusterMap, true, assignments);
+        // 5. Separate details back out based on which resource list they came from
+        const rtsDetails = woDetails.filter(wo => rtsWonums.includes(wo['spi:wonum']));
+        const schedDetails = woDetails.filter(wo => schedWonums.includes(wo['spi:wonum']));
+
+        // 6. Map and process
+        const rtsOrders = processRawRecords(rtsDetails, clusterMap, false);
+        const scheduledOrders = processRawRecords(schedDetails, clusterMap, true, scheduledResources);
 
         return NextResponse.json({
             rtsOrders,
