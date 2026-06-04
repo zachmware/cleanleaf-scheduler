@@ -73,9 +73,10 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule }: { 
   }, [returnHome, order.id]);
 
   const displayTravelMins = travelMins ?? 0;
-  const travelPct = (displayTravelMins / 60) * 100;
+  const travelPct = ((displayTravelMins / 60) / order.durationHours) * 100;
   
-  const returnPct = returnMins ? (returnMins / 60) * 100 : 0;
+  const displayReturnMins = returnMins ?? 0;
+  const returnPct = returnMins ? ((displayReturnMins / 60) / order.durationHours) * 100 : 0;
   
   const isOverlap = travelMins !== null && gapMins < travelMins;
 
@@ -307,7 +308,7 @@ export default function GanttTimeline({ days, offsetDays = 0, technicians, sched
   const sortedRegions = Object.keys(regionGroups).sort();
 
   return (
-    <div style={{ backgroundColor: 'var(--surface-color)', borderRadius: '12px', border: '1px solid var(--border-color)', overflowX: 'auto', paddingBottom: '24px' }}>
+    <div style={{ backgroundColor: 'var(--surface-color)', borderRadius: '12px', border: '1px solid var(--border-color)', overflowY: 'auto', overflowX: 'auto', height: 'calc(100vh - 120px)', paddingBottom: '24px' }}>
        {/* Sticky Header Layer physically bypassing vertical overflow */}
        <div style={{ display: 'flex', position: 'sticky', top: 0, zIndex: 100, backgroundColor: 'var(--surface-color)', alignSelf: 'flex-start' }}>
          <div style={{ width: '240px', minWidth: '240px', maxWidth: '240px', flexShrink: 0, backgroundColor: 'var(--surface-color)', padding: '16px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', fontWeight: 600, display: 'flex', alignItems: 'center' }}>

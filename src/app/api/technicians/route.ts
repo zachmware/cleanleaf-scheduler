@@ -65,7 +65,7 @@ export async function GET() {
                     id: personId,
                     name: person['spi:displayname'] || labor['spi:laborcode'] || 'Unknown Tech',
                     timezone: person['spi:timezone'] || 'America/New_York',
-                    region: 'Midwest', // Default fallback
+                    region: 'Unassigned', // Default fallback
                     homeAddress: finalAddressString || 'Unknown', 
                     skills: crafts.map((c: any) => c['spi:craft']).filter(Boolean)
                 });
@@ -94,13 +94,15 @@ export async function GET() {
                     }
                 }
             } catch (e) {
-                // Silently fallback to Midwest on error
+                // Silently fallback on error
             }
             return tech;
         });
 
         const completedRoster = await Promise.all(rosterPromises);
-        return NextResponse.json(completedRoster);
+        const filteredRoster = completedRoster.filter(t => t.region !== 'Unassigned');
+        
+        return NextResponse.json(filteredRoster);
         
     } catch (err: any) {
         console.error("Technician API Error:", err);
