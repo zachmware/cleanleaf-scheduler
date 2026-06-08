@@ -36,7 +36,7 @@ export async function GET() {
         }
         
         // 2. Fetch Technicians
-        const maximoUrl = 'https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxlabor?oslc.select=laborcode,person{personid,displayname,timezone,addressline1,city,stateprovince,postalcode},laborcraftrate{craft}&oslc.pageSize=200';
+        const maximoUrl = 'https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxlabor?oslc.select=laborcode,person{personid,displayname,timezone,addressline1,city,stateprovince,postalcode},laborcraftrate{craft}&oslc.pageSize=1000';
         const response = await fetch(maximoUrl, { method: 'GET', headers });
 
         if (!response.ok) {
