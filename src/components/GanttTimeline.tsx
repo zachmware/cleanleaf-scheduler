@@ -158,10 +158,7 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule, onCl
                order.status === 'Checked Out' ? '#3b82f6' : 
                order.status === 'In Progress' ? '#f97316' : '#eab308'
             }`,
-            backgroundColor: 
-               order.status === 'Completed' ? '#d1fae5' : 
-               order.status === 'Checked Out' ? '#dbeafe' : 
-               order.status === 'In Progress' ? '#ffedd5' : '#fef9c3'
+            backgroundColor: 'var(--surface-color)'
          }}
       >
          <div className="priority-indicator"></div>
@@ -379,23 +376,23 @@ export default function GanttTimeline({ days, offsetDays = 0, technicians, sched
          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ backgroundColor: 'var(--surface-color)', padding: '24px', borderRadius: '12px', width: '400px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
                <h2 style={{ marginTop: 0, marginBottom: '8px', color: 'var(--primary)' }}>Appointment Details</h2>
-               <div style={{ marginBottom: '16px', fontWeight: 600, fontSize: '1.1rem' }}>{selectedOrder.title}</div>
+               <div style={{ marginBottom: '16px', fontWeight: 600, fontSize: '1.1rem', color: 'var(--text-main)' }}>{selectedOrder.title}</div>
                
                <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px', marginBottom: '24px', fontSize: '0.9rem' }}>
                   <div style={{ color: 'var(--text-muted)' }}>Project:</div>
-                  <div>{selectedOrder.projectName}</div>
+                  <div style={{ color: 'var(--text-main)' }}>{selectedOrder.projectName}</div>
                   
                   <div style={{ color: 'var(--text-muted)' }}>Address:</div>
-                  <div>{selectedOrder.projectAddress}</div>
+                  <div style={{ color: 'var(--text-main)' }}>{selectedOrder.projectAddress}</div>
                   
                   <div style={{ color: 'var(--text-muted)' }}>Work Type:</div>
-                  <div>{selectedOrder.caseType}</div>
+                  <div style={{ color: 'var(--text-main)' }}>{selectedOrder.caseType}</div>
                   
                   <div style={{ color: 'var(--text-muted)' }}>Duration:</div>
-                  <div>{selectedOrder.durationHours} Hours</div>
+                  <div style={{ color: 'var(--text-main)' }}>{selectedOrder.durationHours} Hours</div>
                   
                   <div style={{ color: 'var(--text-muted)' }}>Start Time:</div>
-                  <div>{new Date(selectedOrder.startTime || '').toLocaleString()}</div>
+                  <div style={{ color: 'var(--text-main)' }}>{new Date(selectedOrder.startTime || '').toLocaleString()}</div>
                </div>
 
                <div style={{ marginBottom: '24px' }}>
@@ -412,7 +409,7 @@ export default function GanttTimeline({ days, offsetDays = 0, technicians, sched
                            setSelectedOrder({ ...selectedOrder, status: val });
                         }
                      }}
-                     style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)' }}
+                     style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }}
                   >
                      <option value="None">None (Unschedule)</option>
                      <option value="Scheduled">Scheduled</option>
