@@ -5,10 +5,14 @@ export const revalidate = 300; // Cache the Maximo response for 5 minutes
 function processRawRecords(members: any[], clusterMap: Map<string, number>, isScheduled: boolean, assignments?: any[]) {
     const rawRecords = members.map((wo: any) => {
         const addr = (wo['spi:woserviceaddress'] && wo['spi:woserviceaddress'][0]) || {};
+        const locNode = (wo['spi:locations'] && wo['spi:locations'][0]) || {};
+        
+        const rawDesc = wo['spi:description'] || `Work Order ${wo['spi:wonum']}`;
+        const cleanDesc = rawDesc.replace(/\[.*?\]/g, '').trim();
         
         return {
             id: wo['spi:wonum'],
-            title: wo['spi:description'] || `Work Order ${wo['spi:wonum']}`,
+            title: cleanDesc,
             worktype: wo['spi:worktype'] || 'CM',
             ticketid: wo['spi:origrecordid'] || 'N/A',
             customworktype: wo['spi:jobtype_description'] || 'O&M', 
@@ -18,7 +22,7 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
             customer: wo['spi:client'] || wo['spi:vendor'] || 'Unknown Client', 
             location: wo['spi:location'] || 'UNKNOWN',
             projectName: addr['spi:description'] || wo['spi:location'] || 'Unknown Project',
-            explicitRegion: (addr['spi:stateprovince'] || '').toUpperCase() === 'NC' ? 'Mid-Atlantic' : 'Midwest', 
+            explicitRegion: locNode['spi:region'] || ((addr['spi:stateprovince'] || '').toUpperCase() === 'NC' ? 'Mid-Atlantic' : 'Midwest'), 
             estdur: wo['spi:estdur'] || 2,
             formattedaddress: [addr['spi:streetaddress'], addr['spi:city'], addr['spi:stateprovince']].filter(Boolean).join(', ') || 'Unknown Address', 
             streetaddress: addr['spi:streetaddress'] || 'Unknown',
@@ -166,7 +170,7 @@ export async function GET() {
         const allUniqueWonums = Array.from(new Set([...rtsWonums, ...schedWonums]));
 
         // 4. Fetch WO Details for those WONUMs via OSLC
-        const selectParams = 'wonum,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode}';
+        const selectParams = 'wonum,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode},locations{region}';
         let woDetails: any[] = [];
         
         if (allUniqueWonums.length > 0) {

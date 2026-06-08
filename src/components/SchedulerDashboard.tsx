@@ -73,6 +73,10 @@ export default function SchedulerDashboard() {
      }
   };
 
+  const handleStatusChange = (orderId: string, newStatus: string) => {
+     setScheduledOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveDragId(null);
     const { active, over } = event;
@@ -491,6 +495,7 @@ export default function SchedulerDashboard() {
                   technicians={technicians} 
                   scheduledOrders={scheduledOrders} 
                   onUnschedule={handleUnschedule}
+                  onStatusChange={handleStatusChange}
                />
             )}
           </div>

@@ -17,11 +17,13 @@ function TimelineSlot({ techId, dateStr, timeHour, children, isOutsideBusinessHo
       style={{ 
         height: '60px', 
         flex: 1, 
-        minWidth: '20px', // allows shrinking
+        minWidth: '20px', 
         borderRight: '1px solid var(--border-color)', 
         borderBottom: '1px solid var(--border-color)',
-        backgroundColor: isOver ? 'rgba(59, 130, 246, 0.4)' : isOutsideBusinessHours ? 'rgba(0,0,0,0.3)' : 'transparent',
-        position: 'relative'
+        backgroundColor: isOver ? 'rgba(59, 130, 246, 0.1)' : isOutsideBusinessHours ? 'rgba(0,0,0,0.05)' : 'transparent',
+        border: isOver ? '2px dashed var(--primary)' : 'none',
+        position: 'relative',
+        boxSizing: 'border-box'
       }}
     >
       {children}
@@ -29,7 +31,7 @@ function TimelineSlot({ techId, dateStr, timeHour, children, isOutsideBusinessHo
   );
 }
 
-function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule }: { order: WorkOrder, origin: string, gapMins: number, returnHome?: string, onUnschedule: (id: string) => void }) {
+function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule, onClick }: { order: WorkOrder, origin: string, gapMins: number, returnHome?: string, onUnschedule: (id: string) => void, onClick?: () => void }) {
    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: order.id,
     data: order
@@ -93,6 +95,7 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule }: { 
       {...listeners}
       {...attributes}
       onContextMenu={handleRightClick}
+      onClick={onClick}
       style={{
         position: 'absolute',
         top: '4px',
@@ -142,8 +145,23 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule }: { 
 
       <div 
          className={`rts-card`} 
-         title={`${order.title}\nProject: ${order.projectName}\nCase Type: ${order.caseType}\nRegion: ${order.region}\nPriority Level: ${order.reportedPriorityText}\nScore: ${order.priority}\nDuration: ${order.durationHours}hr`}
-         style={{ width: '100%', height: '100%', padding: '8px', cursor: 'grab', position: 'relative', borderLeft: order._isAbsoluteEmergency ? '6px solid red' : '6px solid var(--primary)' }}
+         title={`${order.title}\nProject: ${order.projectName}\nCase Type: ${order.caseType}\nRegion: ${order.region}\nPriority Level: ${order.reportedPriorityText}\nScore: ${order.priority}\nDuration: ${order.durationHours}hr\nStatus: ${order.status}`}
+         style={{ 
+            width: '100%', 
+            height: '100%', 
+            padding: '8px', 
+            cursor: 'grab', 
+            position: 'relative', 
+            borderLeft: `6px solid ${
+               order.status === 'Completed' ? '#10b981' : 
+               order.status === 'Checked Out' ? '#3b82f6' : 
+               order.status === 'In Progress' ? '#f97316' : '#eab308'
+            }`,
+            backgroundColor: 
+               order.status === 'Completed' ? 'rgba(16, 185, 129, 0.1)' : 
+               order.status === 'Checked Out' ? 'rgba(59, 130, 246, 0.1)' : 
+               order.status === 'In Progress' ? 'rgba(249, 115, 22, 0.1)' : 'rgba(234, 179, 8, 0.1)'
+         }}
       >
          <div className="priority-indicator"></div>
          <div style={{ fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -157,7 +175,7 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule }: { 
   );
 }
 
-function TimezoneGroup({ tz, techs, dates, scheduledOrders, onUnschedule }: any) {
+function TimezoneGroup({ tz, techs, dates, scheduledOrders, onUnschedule, onBlockClick }: any) {
    const [localTimeString, setLocalTimeString] = useState<string>('');
    const [currentTimeRatio, setCurrentTimeRatio] = useState<number | null>(null);
 
@@ -268,7 +286,7 @@ function TimezoneGroup({ tz, techs, dates, scheduledOrders, onUnschedule }: any)
 
                        return (
                          <TimelineSlot key={`${dateStr}-${hour}`} techId={tech.id} dateStr={dateStr} timeHour={hour} isOutsideBusinessHours={isOut}>
-                             {orderInSlot && context && <ScheduledBlock order={orderInSlot} origin={context.origin} gapMins={context.gapMins} returnHome={context.targetReturnHome} onUnschedule={onUnschedule} />}
+                             {orderInSlot && context && <ScheduledBlock order={orderInSlot} origin={context.origin} gapMins={context.gapMins} returnHome={context.targetReturnHome} onUnschedule={onUnschedule} onClick={() => onBlockClick(orderInSlot)} />}
                          </TimelineSlot>
                        );
                     })}
@@ -282,7 +300,8 @@ function TimezoneGroup({ tz, techs, dates, scheduledOrders, onUnschedule }: any)
    );
 }
 
-export default function GanttTimeline({ days, offsetDays = 0, technicians, scheduledOrders, onUnschedule }: { days: number, offsetDays?: number, technicians: Technician[], scheduledOrders: WorkOrder[], onUnschedule: (id: string) => void }) {
+export default function GanttTimeline({ days, offsetDays = 0, technicians, scheduledOrders, onUnschedule, onStatusChange }: { days: number, offsetDays?: number, technicians: Technician[], scheduledOrders: WorkOrder[], onUnschedule: (id: string) => void, onStatusChange?: (id: string, newStatus: string) => void }) {
+  const [selectedOrder, setSelectedOrder] = useState<WorkOrder | null>(null);
   const today = new Date();
   
   // Calculate Target Offset natively
@@ -348,11 +367,66 @@ export default function GanttTimeline({ days, offsetDays = 0, technicians, sched
                  </div>
                  {/* Render Timezones sequentially beneath the region */}
                  {Object.entries(tzGroups).sort().map(([tz, techs]) => (
-                    <TimezoneGroup key={`${region}-${tz}`} tz={tz} techs={techs} dates={dates} scheduledOrders={scheduledOrders} onUnschedule={onUnschedule} />
+                    <TimezoneGroup key={`${region}-${tz}`} tz={tz} techs={techs} dates={dates} scheduledOrders={scheduledOrders} onUnschedule={onUnschedule} onBlockClick={setSelectedOrder} />
                  ))}
               </div>
            );
        })}
+
+       {/* Order Details Modal */}
+       {selectedOrder && (
+         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ backgroundColor: 'var(--surface-color)', padding: '24px', borderRadius: '12px', width: '400px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+               <h2 style={{ marginTop: 0, marginBottom: '8px', color: 'var(--primary)' }}>Appointment Details</h2>
+               <div style={{ marginBottom: '16px', fontWeight: 600, fontSize: '1.1rem' }}>{selectedOrder.title}</div>
+               
+               <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px', marginBottom: '24px', fontSize: '0.9rem' }}>
+                  <div style={{ color: 'var(--text-muted)' }}>Project:</div>
+                  <div>{selectedOrder.projectName}</div>
+                  
+                  <div style={{ color: 'var(--text-muted)' }}>Address:</div>
+                  <div>{selectedOrder.projectAddress}</div>
+                  
+                  <div style={{ color: 'var(--text-muted)' }}>Work Type:</div>
+                  <div>{selectedOrder.caseType}</div>
+                  
+                  <div style={{ color: 'var(--text-muted)' }}>Duration:</div>
+                  <div>{selectedOrder.durationHours} Hours</div>
+                  
+                  <div style={{ color: 'var(--text-muted)' }}>Start Time:</div>
+                  <div>{new Date(selectedOrder.startTime || '').toLocaleString()}</div>
+               </div>
+
+               <div style={{ marginBottom: '24px' }}>
+                  <label style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Update Status</label>
+                  <select 
+                     value={selectedOrder.status || 'Scheduled'} 
+                     onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'None') {
+                           onUnschedule(selectedOrder.id);
+                           setSelectedOrder(null);
+                        } else {
+                           if (onStatusChange) onStatusChange(selectedOrder.id, val);
+                           setSelectedOrder({ ...selectedOrder, status: val });
+                        }
+                     }}
+                     style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)' }}
+                  >
+                     <option value="None">None (Unschedule)</option>
+                     <option value="Scheduled">Scheduled</option>
+                     <option value="In Progress">In Progress</option>
+                     <option value="Checked Out">Checked Out</option>
+                     <option value="Completed">Completed</option>
+                  </select>
+               </div>
+
+               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button onClick={() => setSelectedOrder(null)} className="btn btn-primary" style={{ padding: '8px 16px' }}>Close</button>
+               </div>
+            </div>
+         </div>
+       )}
     </div>
   );
 }

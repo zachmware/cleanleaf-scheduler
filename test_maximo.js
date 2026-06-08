@@ -8,32 +8,29 @@ const headers = {
 
 async function run() {
     try {
-        console.log("Fetching WO resources...");
-        const sideUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=300&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`;
-        const resSide = await fetch(sideUrl, { method: 'GET', headers });
-        let rtsResources = [];
-        if (resSide.ok) {
-            const dataSide = await resSide.json();
-            const allSide = dataSide.WOADDITIONALRESOURCEMboSet.WOADDITIONALRESOURCE || [];
-            rtsResources = allSide.filter(a => a.Attributes.STATUS && a.Attributes.STATUS.content === 'None');
-        }
+        console.log("Fetching a few WOs to get a location...");
+        const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.select=wonum,location&oslc.pageSize=5`;
+        const resOs = await fetch(osUrl, { method: 'GET', headers });
+        if (resOs.ok) {
+            const dataOs = await resOs.json();
+            const wos = dataOs['rdfs:member'] || [];
+            console.log("WOs:", JSON.stringify(wos, null, 2));
 
-        const schedUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=500&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`;
-        const resSched = await fetch(schedUrl, { method: 'GET', headers });
-        let scheduledResources = [];
-        if (resSched.ok) {
-            const dataSched = await resSched.json();
-            const allSched = dataSched.WOADDITIONALRESOURCEMboSet.WOADDITIONALRESOURCE || [];
-            scheduledResources = allSched.filter(a => a.Attributes.STATUS && a.Attributes.STATUS.content !== 'None' && a.Attributes.SCHEDSTART);
+            if (wos.length > 0 && wos[0]['spi:location']) {
+                const locStr = wos[0]['spi:location'];
+                console.log("Querying MBO Locations for Region:");
+                const locUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/locations?_format=json&region=~like~%25&_inclCol=location,region&_maxItems=5`;
+                const resLoc = await fetch(locUrl, { method: 'GET', headers });
+                if (resLoc.ok) {
+                    const dataLoc = await resLoc.json();
+                    console.log("MBO Location Data with Region:", JSON.stringify(dataLoc, null, 2).substring(0, 5000));
+                } else {
+                    console.log("MBO Location fetch failed:", await resLoc.text());
+                }
+            }
+        } else {
+            console.log("WO fetch failed:", await resOs.text());
         }
-
-        console.log("Extracting wonums...");
-        const rtsWonums = rtsResources.map(a => a.Attributes.WONUM.content).filter(Boolean);
-        const schedWonums = scheduledResources.map(a => a.Attributes.WONUM.content).filter(Boolean);
-        
-        console.log("RTS wonums length:", rtsWonums.length);
-        console.log("Sched wonums length:", schedWonums.length);
-        console.log("Done");
     } catch(e) {
         console.error("ERROR:", e);
     }

@@ -5,7 +5,7 @@ export interface WorkOrder {
   priority: number; // 1 to 5
   durationHours: number; // For simplicity in the Gantt, duration is blocks of hours
   region: string; // The territory this job is in
-  status: 'RTS' | 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED';
+  status: string;
   assignedTechId?: string;
   startTime?: string; // ISO string representing scheduled startTime 
   checkInTime?: string; // Overrides startTime visually on Gantt
