@@ -159,9 +159,9 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule, onCl
                order.status === 'In Progress' ? '#f97316' : '#eab308'
             }`,
             backgroundColor: 
-               order.status === 'Completed' ? 'rgba(16, 185, 129, 0.1)' : 
-               order.status === 'Checked Out' ? 'rgba(59, 130, 246, 0.1)' : 
-               order.status === 'In Progress' ? 'rgba(249, 115, 22, 0.1)' : 'rgba(234, 179, 8, 0.1)'
+               order.status === 'Completed' ? '#d1fae5' : 
+               order.status === 'Checked Out' ? '#dbeafe' : 
+               order.status === 'In Progress' ? '#ffedd5' : '#fef9c3'
          }}
       >
          <div className="priority-indicator"></div>

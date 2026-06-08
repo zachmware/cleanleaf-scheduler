@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from 'react';
-import { DndContext, DragEndEvent, DragOverlay } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragOverlay, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import { mockRTSWorkOrders, mockScheduledOrders, WorkOrder, Technician } from '@/data/mockData';
 import SidebarRTS from './SidebarRTS';
 import GanttTimeline from './GanttTimeline';
@@ -54,6 +54,14 @@ export default function SchedulerDashboard() {
       })
       .finally(() => setIsLoadingDB(false));
   }, []);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5, // Drag requires moving 5px, allowing normal clicks to pass through
+      },
+    })
+  );
 
   if (!isMounted) return null; // Hydration boundary explicitly prevents DndKit DOM ID mismatches
   
@@ -345,7 +353,7 @@ export default function SchedulerDashboard() {
   const draggingOrder = rtsOrders.find(o => o.id === activeDragId) || scheduledOrders.find(o => o.id === activeDragId);
 
   return (
-    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd} sensors={sensors}>
       {isScheduling && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
