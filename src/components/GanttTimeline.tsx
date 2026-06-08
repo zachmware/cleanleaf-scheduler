@@ -21,7 +21,8 @@ function TimelineSlot({ techId, dateStr, timeHour, children, isOutsideBusinessHo
         borderRight: '1px solid var(--border-color)', 
         borderBottom: '1px solid var(--border-color)',
         backgroundColor: isOver ? 'rgba(59, 130, 246, 0.1)' : isOutsideBusinessHours ? 'rgba(0,0,0,0.05)' : 'transparent',
-        border: isOver ? '2px dashed var(--primary)' : 'none',
+        outline: isOver ? '2px dashed var(--primary)' : 'none',
+        outlineOffset: '-2px',
         position: 'relative',
         boxSizing: 'border-box'
       }}
@@ -95,7 +96,6 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule, onCl
       {...listeners}
       {...attributes}
       onContextMenu={handleRightClick}
-      onClick={onClick}
       style={{
         position: 'absolute',
         top: '4px',
@@ -145,6 +145,7 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule, onCl
 
       <div 
          className={`rts-card`} 
+         onClick={onClick}
          title={`${order.title}\nProject: ${order.projectName}\nCase Type: ${order.caseType}\nRegion: ${order.region}\nPriority Level: ${order.reportedPriorityText}\nScore: ${order.priority}\nDuration: ${order.durationHours}hr\nStatus: ${order.status}`}
          style={{ 
             width: '100%', 

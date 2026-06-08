@@ -8,28 +8,28 @@ const headers = {
 
 async function run() {
     try {
-        console.log("Fetching a few WOs to get a location...");
-        const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.select=wonum,location&oslc.pageSize=5`;
-        const resOs = await fetch(osUrl, { method: 'GET', headers });
-        if (resOs.ok) {
-            const dataOs = await resOs.json();
-            const wos = dataOs['rdfs:member'] || [];
-            console.log("WOs:", JSON.stringify(wos, null, 2));
+        console.log("Fetching WO resources...");
+        const sideUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=1&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`;
+        const resSide = await fetch(sideUrl, { method: 'GET', headers });
+        let wonum = null;
+        if (resSide.ok) {
+            const dataSide = await resSide.json();
+            const allSide = dataSide.WOADDITIONALRESOURCEMboSet.WOADDITIONALRESOURCE || [];
+            if (allSide.length > 0) wonum = allSide[0].Attributes.WONUM.content;
+        }
 
-            if (wos.length > 0 && wos[0]['spi:location']) {
-                const locStr = wos[0]['spi:location'];
-                console.log("Querying MBO Locations for Region:");
-                const locUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/locations?_format=json&region=~like~%25&_inclCol=location,region&_maxItems=5`;
-                const resLoc = await fetch(locUrl, { method: 'GET', headers });
-                if (resLoc.ok) {
-                    const dataLoc = await resLoc.json();
-                    console.log("MBO Location Data with Region:", JSON.stringify(dataLoc, null, 2).substring(0, 5000));
-                } else {
-                    console.log("MBO Location fetch failed:", await resLoc.text());
-                }
-            }
-        } else {
-            console.log("WO fetch failed:", await resOs.text());
+        if (wonum) {
+            const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=wonum="${wonum}"&oslc.select=*`;
+            const resOs = await fetch(osUrl, { method: 'GET', headers });
+            const dataOs = await resOs.json();
+            const wo = dataOs['rdfs:member'][0];
+            const locStr = wo['spi:location'];
+            console.log("Found WO location:", locStr);
+
+            const locUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/locations?_format=json&location=~in~908-2080,908-1537`;
+            const resLoc = await fetch(locUrl, { method: 'GET', headers });
+            const dataLoc = await resLoc.json();
+            console.log("IN length:", dataLoc?.LOCATIONSMboSet?.LOCATIONS?.length);
         }
     } catch(e) {
         console.error("ERROR:", e);

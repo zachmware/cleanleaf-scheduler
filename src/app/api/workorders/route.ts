@@ -6,6 +6,7 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
     const rawRecords = members.map((wo: any) => {
         const addr = (wo['spi:woserviceaddress'] && wo['spi:woserviceaddress'][0]) || {};
         const locNode = (wo['spi:locations'] && wo['spi:locations'][0]) || {};
+        const explicitMboRegion = wo._explicitMboRegion;
         
         const rawDesc = wo['spi:description'] || `Work Order ${wo['spi:wonum']}`;
         const cleanDesc = rawDesc.replace(/\[.*?\]/g, '').trim();
@@ -22,7 +23,7 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
             customer: wo['spi:client'] || wo['spi:vendor'] || 'Unknown Client', 
             location: wo['spi:location'] || 'UNKNOWN',
             projectName: addr['spi:description'] || wo['spi:location'] || 'Unknown Project',
-            explicitRegion: locNode['spi:region'] || ((addr['spi:stateprovince'] || '').toUpperCase() === 'NC' ? 'Mid-Atlantic' : 'Midwest'), 
+            explicitRegion: explicitMboRegion || locNode['spi:region'] || ((addr['spi:stateprovince'] || '').toUpperCase() === 'NC' ? 'Mid-Atlantic' : 'Midwest'), 
             estdur: wo['spi:estdur'] || 2,
             formattedaddress: [addr['spi:streetaddress'], addr['spi:city'], addr['spi:stateprovince']].filter(Boolean).join(', ') || 'Unknown Address', 
             streetaddress: addr['spi:streetaddress'] || 'Unknown',
@@ -188,9 +189,39 @@ export async function GET() {
         }
 
         const clusterMap = new Map<string, number>();
+        const uniqueLocations = new Set<string>();
         woDetails.forEach((wo: any) => {
              const loc = wo['spi:location'] || 'UNKNOWN';
              clusterMap.set(loc, (clusterMap.get(loc) || 0) + 1);
+             if (loc !== 'UNKNOWN') uniqueLocations.add(loc);
+        });
+
+        const locationRegionMap = new Map<string, string>();
+        if (uniqueLocations.size > 0) {
+            const locArray = Array.from(uniqueLocations);
+            for (let i = 0; i < locArray.length; i += 30) {
+                const chunk = locArray.slice(i, i + 30).join(',');
+                const locUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/locations?_format=json&location=~in~${chunk}&_inclCol=location,region`;
+                try {
+                    const resLoc = await fetch(locUrl, { method: 'GET', headers });
+                    if (resLoc.ok) {
+                        const dataLoc = await resLoc.json();
+                        const locs = dataLoc?.LOCATIONSMboSet?.LOCATIONS || [];
+                        locs.forEach((l: any) => {
+                             if (l.Attributes?.LOCATION?.content && l.Attributes?.REGION?.content) {
+                                 locationRegionMap.set(l.Attributes.LOCATION.content, l.Attributes.REGION.content);
+                             }
+                        });
+                    }
+                } catch(e) { }
+            }
+        }
+        
+        // Inject explicitly resolved MBO Region back into woDetails
+        woDetails.forEach((wo: any) => {
+             if (wo['spi:location'] && locationRegionMap.has(wo['spi:location'])) {
+                 wo._explicitMboRegion = locationRegionMap.get(wo['spi:location']);
+             }
         });
 
         // 5. Separate details back out based on which resource list they came from
