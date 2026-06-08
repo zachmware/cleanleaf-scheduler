@@ -79,13 +79,13 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
 
         if (isScheduled && assignments) {
             // assignments is an array of MBO records: a.Attributes.WONUM.content
-            const assignment = assignments.find((a: any) => a.Attributes.WONUM.content === row.id);
+            const assignment = assignments.find((a: any) => a.Attributes?.WONUM?.content === row.id);
             if (assignment) {
-                finalStatus = assignment.Attributes.STATUS?.content || 'Scheduled';
-                assignedTechId = assignment.Attributes.PERSONID?.content;
-                startTime = assignment.Attributes.SCHEDSTART?.content;
+                finalStatus = assignment.Attributes?.STATUS?.content || 'Scheduled';
+                assignedTechId = assignment.Attributes?.PERSONID?.content;
+                startTime = assignment.Attributes?.SCHEDSTART?.content;
                 
-                if (assignment.Attributes.SCHEDFINISH && assignment.Attributes.SCHEDSTART) {
+                if (assignment.Attributes?.SCHEDFINISH && assignment.Attributes?.SCHEDSTART) {
                     const sStart = new Date(assignment.Attributes.SCHEDSTART.content).getTime();
                     const sFinish = new Date(assignment.Attributes.SCHEDFINISH.content).getTime();
                     if (sFinish > sStart) {
@@ -145,8 +145,8 @@ export async function GET() {
         let rtsResources: any[] = [];
         if (resSide.ok) {
             const dataSide = await resSide.json();
-            const allSide = dataSide.WOADDITIONALRESOURCEMboSet.WOADDITIONALRESOURCE || [];
-            rtsResources = allSide.filter((a: any) => a.Attributes.STATUS && a.Attributes.STATUS.content === 'None');
+            const allSide = dataSide.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
+            rtsResources = allSide.filter((a: any) => a.Attributes?.STATUS && a.Attributes.STATUS.content === 'None');
         }
 
         // 2. Fetch "Scheduled" resources (Gantt)
@@ -156,13 +156,13 @@ export async function GET() {
         let scheduledResources: any[] = [];
         if (resSched.ok) {
             const dataSched = await resSched.json();
-            const allSched = dataSched.WOADDITIONALRESOURCEMboSet.WOADDITIONALRESOURCE || [];
-            scheduledResources = allSched.filter((a: any) => a.Attributes.STATUS && a.Attributes.STATUS.content !== 'None' && a.Attributes.SCHEDSTART);
+            const allSched = dataSched.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
+            scheduledResources = allSched.filter((a: any) => a.Attributes?.STATUS && a.Attributes.STATUS.content !== 'None' && a.Attributes.SCHEDSTART);
         }
 
         // 3. Extract unique WONUMs from both lists
-        const rtsWonums = rtsResources.map((a: any) => a.Attributes.WONUM.content).filter(Boolean);
-        const schedWonums = scheduledResources.map((a: any) => a.Attributes.WONUM.content).filter(Boolean);
+        const rtsWonums = rtsResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean);
+        const schedWonums = scheduledResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean);
         const allUniqueWonums = Array.from(new Set([...rtsWonums, ...schedWonums]));
 
         // 4. Fetch WO Details for those WONUMs via OSLC
