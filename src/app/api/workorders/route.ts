@@ -143,10 +143,21 @@ export async function GET() {
             'x-public-uri': 'https://cleanleafmax.softwrench2.com/maximo/oslc'
         };
         
+        // Helper to batch execute promises so we don't DDOS Maximo
+        const executeInBatches = async (tasks: (() => Promise<any>)[], batchSize = 5) => {
+             let results: any[] = [];
+             for (let i = 0; i < tasks.length; i += batchSize) {
+                 const batch = tasks.slice(i, i + batchSize);
+                 const batchResults = await Promise.all(batch.map(t => t()));
+                 results = results.concat(batchResults);
+             }
+             return results;
+        };
+
         // 1. Fetch "None" resources (Side RTS)
         // We order by WOADDITIONALRESOURCEID desc to get the most recently created resources
         const sideUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=300&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`;
-        const resSide = await fetch(sideUrl, { method: 'GET', headers });
+        const resSide = await fetch(sideUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) });
         let rtsResources: any[] = [];
         if (resSide.ok) {
             const dataSide = await resSide.json();
@@ -157,7 +168,7 @@ export async function GET() {
         // 2. Fetch "Scheduled" resources (Gantt)
         // We order by SCHEDSTART desc to get the most recently scheduled items
         const schedUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=500&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`;
-        const resSched = await fetch(schedUrl, { method: 'GET', headers });
+        const resSched = await fetch(schedUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) });
         let scheduledResources: any[] = [];
         if (resSched.ok) {
             const dataSched = await resSched.json();
@@ -175,20 +186,20 @@ export async function GET() {
         let woDetails: any[] = [];
         
         if (allUniqueWonums.length > 0) {
-            const chunkPromises = [];
+            const chunkTasks = [];
             for (let i = 0; i < allUniqueWonums.length; i += 30) {
                 const chunk = allUniqueWonums.slice(i, i + 30);
                 const wonumStr = chunk.map(w => `"${w}"`).join(',');
                 const whereClause = encodeURIComponent(`wonum in [${wonumStr}]`);
                 const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=100`;
-                chunkPromises.push(
+                chunkTasks.push(() =>
                     fetch(osUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
                         .then(r => r.ok ? r.json() : null)
                         .then(data => data ? (data['rdfs:member'] || data.member || []) : [])
                         .catch(() => [])
                 );
             }
-            const chunkResults = await Promise.all(chunkPromises);
+            const chunkResults = await executeInBatches(chunkTasks, 5);
             for (const res of chunkResults) {
                 woDetails = woDetails.concat(res);
             }
@@ -205,18 +216,18 @@ export async function GET() {
         const locationRegionMap = new Map<string, string>();
         if (uniqueLocations.size > 0) {
             const locArray = Array.from(uniqueLocations);
-            const locPromises = [];
+            const locTasks = [];
             for (let i = 0; i < locArray.length; i += 30) {
                 const chunk = locArray.slice(i, i + 30).map(c => encodeURIComponent(c)).join(',');
                 const locUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/locations?_format=json&location=~in~${chunk}&_inclCol=location,region`;
-                locPromises.push(
+                locTasks.push(() =>
                     fetch(locUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
                         .then(r => r.ok ? r.json() : null)
                         .then(data => data ? (data?.LOCATIONSMboSet?.LOCATIONS || []) : [])
                         .catch(() => [])
                 );
             }
-            const locResults = await Promise.all(locPromises);
+            const locResults = await executeInBatches(locTasks, 5);
             for (const locs of locResults) {
                 locs.forEach((l: any) => {
                      if (l.Attributes?.LOCATION?.content && l.Attributes?.REGION?.content) {
