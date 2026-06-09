@@ -175,16 +175,22 @@ export async function GET() {
         let woDetails: any[] = [];
         
         if (allUniqueWonums.length > 0) {
-            // Chunk to avoid long URLs (Max 30 wonums per request)
+            const chunkPromises = [];
             for (let i = 0; i < allUniqueWonums.length; i += 30) {
                 const chunk = allUniqueWonums.slice(i, i + 30);
                 const wonumStr = chunk.map(w => `"${w}"`).join(',');
-                const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=wonum in [${wonumStr}]&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=100`;
-                const resOs = await fetch(osUrl, { method: 'GET', headers });
-                if (resOs.ok) {
-                    const dataOs = await resOs.json();
-                    woDetails = woDetails.concat(dataOs['rdfs:member'] || dataOs.member || []);
-                }
+                const whereClause = encodeURIComponent(`wonum in [${wonumStr}]`);
+                const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=100`;
+                chunkPromises.push(
+                    fetch(osUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
+                        .then(r => r.ok ? r.json() : null)
+                        .then(data => data ? (data['rdfs:member'] || data.member || []) : [])
+                        .catch(() => [])
+                );
+            }
+            const chunkResults = await Promise.all(chunkPromises);
+            for (const res of chunkResults) {
+                woDetails = woDetails.concat(res);
             }
         }
 
@@ -199,21 +205,24 @@ export async function GET() {
         const locationRegionMap = new Map<string, string>();
         if (uniqueLocations.size > 0) {
             const locArray = Array.from(uniqueLocations);
+            const locPromises = [];
             for (let i = 0; i < locArray.length; i += 30) {
-                const chunk = locArray.slice(i, i + 30).join(',');
+                const chunk = locArray.slice(i, i + 30).map(c => encodeURIComponent(c)).join(',');
                 const locUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/locations?_format=json&location=~in~${chunk}&_inclCol=location,region`;
-                try {
-                    const resLoc = await fetch(locUrl, { method: 'GET', headers });
-                    if (resLoc.ok) {
-                        const dataLoc = await resLoc.json();
-                        const locs = dataLoc?.LOCATIONSMboSet?.LOCATIONS || [];
-                        locs.forEach((l: any) => {
-                             if (l.Attributes?.LOCATION?.content && l.Attributes?.REGION?.content) {
-                                 locationRegionMap.set(l.Attributes.LOCATION.content, l.Attributes.REGION.content);
-                             }
-                        });
-                    }
-                } catch(e) { }
+                locPromises.push(
+                    fetch(locUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
+                        .then(r => r.ok ? r.json() : null)
+                        .then(data => data ? (data?.LOCATIONSMboSet?.LOCATIONS || []) : [])
+                        .catch(() => [])
+                );
+            }
+            const locResults = await Promise.all(locPromises);
+            for (const locs of locResults) {
+                locs.forEach((l: any) => {
+                     if (l.Attributes?.LOCATION?.content && l.Attributes?.REGION?.content) {
+                         locationRegionMap.set(l.Attributes.LOCATION.content, l.Attributes.REGION.content);
+                     }
+                });
             }
         }
         
