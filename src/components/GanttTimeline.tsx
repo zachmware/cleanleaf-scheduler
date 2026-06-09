@@ -5,7 +5,7 @@ import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { Technician, WorkOrder } from '@/data/mockData';
 
 
-function TimelineSlot({ techId, dateStr, timeHour, children, isOutsideBusinessHours }: any) {
+function TimelineSlot({ techId, dateStr, timeHour, rowHeight, children, isOutsideBusinessHours }: any) {
   const { setNodeRef, isOver } = useDroppable({
     id: `slot-${techId}-${dateStr}-${timeHour}`,
     data: { techId, dateStr, timeHour }
@@ -15,7 +15,7 @@ function TimelineSlot({ techId, dateStr, timeHour, children, isOutsideBusinessHo
     <div 
       ref={setNodeRef}
       style={{ 
-        height: '60px', 
+        height: `${rowHeight}px`,
         flex: 1, 
         minWidth: '20px', 
         borderRight: '1px solid var(--border-color)', 
@@ -32,7 +32,7 @@ function TimelineSlot({ techId, dateStr, timeHour, children, isOutsideBusinessHo
   );
 }
 
-function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule, onClick }: { order: WorkOrder, origin: string, gapMins: number, returnHome?: string, onUnschedule: (id: string) => void, onClick?: () => void }) {
+function ScheduledBlock({ order, origin, gapMins, returnHome, trackIndex = 0, onUnschedule, onClick }: { order: WorkOrder, origin: string, gapMins: number, returnHome?: string, trackIndex?: number, onUnschedule: (id: string) => void, onClick?: () => void }) {
    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: order.id,
     data: order
@@ -98,7 +98,7 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, onUnschedule, onCl
       onContextMenu={handleRightClick}
       style={{
         position: 'absolute',
-        top: '4px',
+        top: `${4 + (trackIndex * 56)}px`,
         left: '2px', 
         width: `calc(${widthPercentage}% - 4px)`,
         height: '52px',
@@ -229,18 +229,10 @@ function TimezoneGroup({ tz, techs, dates, scheduledOrders, onUnschedule, onBloc
 
         {techs.map((tech: Technician) => {
           
-          return (
-           <div key={tech.id} style={{ display: 'flex' }}>
-              {/* Strictly Lock width dimensions so names/addresses cannot warp Grid geometry */}
-              <div style={{ width: '240px', minWidth: '240px', maxWidth: '240px', flexShrink: 0, backgroundColor: 'var(--surface-color)', padding: '16px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
-                <div style={{ fontWeight: 600 }}>{tech.name}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tech.homeAddress}</div>
-              </div>
-              
-              {dates.map((date: Date, di: number) => {
+           let maxTracksForTech = 1;
+           const techDaysData = dates.map((date: Date, di: number) => {
                  const dateStr = date.toISOString().split('T')[0];
                  
-                 // Sequence calculation for this tech's day
                  const todaysOrdersForTech = scheduledOrders
                     .filter((o: WorkOrder) => {
                        if (!o.startTime || o.assignedTechId !== tech.id) return false;
@@ -255,37 +247,70 @@ function TimezoneGroup({ tz, techs, dates, scheduledOrders, onUnschedule, onBloc
                     });
                     
                  const orderContextMap = new Map();
+                 const tracks: { end: number }[] = [];
+
                  for (let i = 0; i < todaysOrdersForTech.length; i++) {
                      const order = todaysOrdersForTech[i];
-                     // Explicit Maps override binding to real backend physical variables conditionally!
                      const origin = i === 0 ? tech.homeAddress : (todaysOrdersForTech[i-1].projectAddress || todaysOrdersForTech[i-1].projectName || tech.homeAddress);
                      let gapMins = 9999;
                      const targetReturnHome = (i === todaysOrdersForTech.length - 1) ? tech.homeAddress : undefined;
                      
+                     const currStart = new Date(order.checkInTime || order.startTime!).getTime();
+                     const currEnd = currStart + order.durationHours * 3600000;
+
                      if (i > 0) {
                          const prevOrder = todaysOrdersForTech[i-1];
                          const prevEnd = new Date(prevOrder.checkInTime || prevOrder.startTime!).getTime() + prevOrder.durationHours * 3600000;
-                         const currStart = new Date(order.checkInTime || order.startTime!).getTime();
                          gapMins = (currStart - prevEnd) / 60000;
                      }
-                     orderContextMap.set(order.id, { origin, gapMins, targetReturnHome });
-                 }
 
+                     // Find first available vertical track that doesn't overlap
+                     let trackIndex = 0;
+                     while (trackIndex < tracks.length && tracks[trackIndex].end > currStart) {
+                         trackIndex++;
+                     }
+                     if (trackIndex >= tracks.length) {
+                         tracks.push({ end: currEnd });
+                     } else {
+                         tracks[trackIndex].end = currEnd;
+                     }
+
+                     orderContextMap.set(order.id, { origin, gapMins, targetReturnHome, trackIndex });
+                 }
+                 
+                 maxTracksForTech = Math.max(maxTracksForTech, tracks.length);
+                 return { dateStr, todaysOrdersForTech, orderContextMap };
+           });
+           
+           const rowHeight = Math.max(60, 60 + (maxTracksForTech - 1) * 56);
+
+           return (
+            <div key={tech.id} style={{ display: 'flex' }}>
+               <div style={{ width: '240px', minWidth: '240px', maxWidth: '240px', flexShrink: 0, backgroundColor: 'var(--surface-color)', padding: '16px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
+                 <div style={{ fontWeight: 600 }}>{tech.name}</div>
+                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tech.homeAddress}</div>
+               </div>
+               
+               {techDaysData.map(({ dateStr, todaysOrdersForTech, orderContextMap }: any, di: number) => {
                  return (
                  <div key={di} style={{ display: 'flex', flex: 1 }}>
                     {hoursList.map(hour => {
-                       const orderInSlot = todaysOrdersForTech.find((o: WorkOrder) => {
+                       // Find ALL orders that start in this specific hour slot
+                       const ordersInSlot = todaysOrdersForTech.filter((o: WorkOrder) => {
                           const dAnchor = new Date(o.checkInTime || o.startTime!);
                           return dAnchor.getHours() === hour;
                        });
 
-                       const context = orderInSlot ? orderContextMap.get(orderInSlot.id) : null;
                        const isOut = hour < 6 || hour >= 18;
 
                        return (
-                         <TimelineSlot key={`${dateStr}-${hour}`} techId={tech.id} dateStr={dateStr} timeHour={hour} isOutsideBusinessHours={isOut}>
-                             {orderInSlot && context && <ScheduledBlock order={orderInSlot} origin={context.origin} gapMins={context.gapMins} returnHome={context.targetReturnHome} onUnschedule={onUnschedule} onClick={() => onBlockClick(orderInSlot)} />}
-                         </TimelineSlot>
+                             <TimelineSlot key={`${dateStr}-${hour}`} techId={tech.id} dateStr={dateStr} timeHour={hour} rowHeight={rowHeight} isOutsideBusinessHours={isOut}>
+                                 {ordersInSlot.map((orderInSlot: WorkOrder) => {
+                                     const context = orderContextMap.get(orderInSlot.id);
+                                     if (!context) return null;
+                                     return <ScheduledBlock key={orderInSlot.id} order={orderInSlot} origin={context.origin} gapMins={context.gapMins} returnHome={context.targetReturnHome} trackIndex={context.trackIndex} onUnschedule={onUnschedule} onClick={() => onBlockClick(orderInSlot)} />;
+                                 })}
+                             </TimelineSlot>
                        );
                     })}
                  </div>
