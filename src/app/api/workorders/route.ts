@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 export const revalidate = 300; // Cache the Maximo response for 5 minutes
+export const maxDuration = 60; // Allow Vercel Hobby serverless to run up to 60s
 
 function processRawRecords(members: any[], clusterMap: Map<string, number>, isScheduled: boolean, assignments?: any[]) {
     const rawRecords = members.map((wo: any) => {

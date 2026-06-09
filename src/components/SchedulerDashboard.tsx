@@ -5,7 +5,7 @@ import { DndContext, DragEndEvent, DragOverlay, useSensor, useSensors, PointerSe
 import { mockRTSWorkOrders, mockScheduledOrders, WorkOrder, Technician } from '@/data/mockData';
 import SidebarRTS from './SidebarRTS';
 import GanttTimeline from './GanttTimeline';
-import { Settings, Play, CalendarDays } from 'lucide-react';
+import { Settings, Play, CalendarDays, RefreshCw } from 'lucide-react';
 
 export default function SchedulerDashboard() {
   const [rtsOrders, setRtsOrders] = useState<WorkOrder[]>([]);
@@ -20,11 +20,14 @@ export default function SchedulerDashboard() {
   const [isLoadingDB, setIsLoadingDB] = useState<boolean>(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const abortScheduling = useRef(false);
 
-  React.useEffect(() => {
-     setIsMounted(true);
-     
+  const fetchData = (isSoftRefresh = false) => {
+     if (isSoftRefresh) setIsRefreshing(true);
+     else setIsLoadingDB(true);
+     setDbError(null);
+
      Promise.all([
         fetch('/api/workorders').then(res => {
             if (!res.ok) throw new Error('WorkOrder API Error');
@@ -39,7 +42,7 @@ export default function SchedulerDashboard() {
              setRtsOrders(woData.rtsOrders);
              setScheduledOrders(woData.scheduledOrders || []);
              
-             if (woData.scheduledOrders && woData.scheduledOrders.length > 0) {
+             if (woData.scheduledOrders && woData.scheduledOrders.length > 0 && !isSoftRefresh) {
                  const mostRecentDateStr = woData.scheduledOrders[0].startTime.split('T')[0];
                  setTargetDateStr(mostRecentDateStr);
              }
@@ -52,7 +55,15 @@ export default function SchedulerDashboard() {
           console.error("Failed to connect to Maximo:", e);
           setDbError(e.message);
       })
-      .finally(() => setIsLoadingDB(false));
+      .finally(() => {
+          setIsLoadingDB(false);
+          setIsRefreshing(false);
+      });
+  };
+
+  React.useEffect(() => {
+     setIsMounted(true);
+     fetchData();
   }, []);
 
   const sensors = useSensors(
@@ -449,7 +460,29 @@ export default function SchedulerDashboard() {
                  <button onClick={() => setViewOffsetDays(v => v - 1)} style={{ background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-main)', padding: '4px 8px' }}>←</button>
                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>View Range</span>
                  <button onClick={() => setViewOffsetDays(v => v + 1)} style={{ background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-main)', padding: '4px 8px' }}>→</button>
-                 <button onClick={() => setViewOffsetDays(0)} style={{ background: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-main)', padding: '4px 8px', fontSize: '0.8rem', marginLeft: '4px' }}>Today</button>
+              </div>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderLeft: '1px solid var(--border-color)', paddingLeft: '8px' }}>
+                  <button 
+                    onClick={() => fetchData(true)}
+                    style={{ 
+                        background: 'transparent', 
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: '6px', 
+                        cursor: 'pointer', 
+                        color: 'var(--text-main)', 
+                        padding: '6px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontWeight: 600,
+                        fontSize: '0.85rem'
+                    }}
+                  >
+                    <RefreshCw className="h-4 w-4" style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
+                    {isRefreshing ? 'Syncing...' : 'Refresh'}
+                  </button>
+                  <button onClick={() => setViewOffsetDays(0)} style={{ background: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-main)', padding: '4px 8px', fontSize: '0.8rem', marginLeft: '4px' }}>Today</button>
                </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderLeft: '1px solid var(--border-color)', paddingLeft: '8px' }}>
