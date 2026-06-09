@@ -43,7 +43,12 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, trackIndex = 0, on
   const [travelMins, setTravelMins] = useState<number | null>(null);
   const [returnMins, setReturnMins] = useState<number | null>(null);
 
+  // Consider address incomplete if it lacks numbers or is very short (e.g. just a state code)
+  const isIncomplete = !order.projectAddress || !/\d/.test(order.projectAddress) || order.projectAddress.length <= 3;
+
   useEffect(() => {
+     if (isIncomplete) return;
+     
      fetch('/api/distance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -59,6 +64,7 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, trackIndex = 0, on
   }, [origin, order.id]);
 
   useEffect(() => {
+     if (isIncomplete) return;
      if (returnHome) {
          fetch('/api/distance', {
             method: 'POST',
