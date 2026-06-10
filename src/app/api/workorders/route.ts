@@ -155,15 +155,15 @@ export async function GET() {
              return results;
         };
 
-        const selectParams = 'wonum,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode},locations{region}';
-
-        // 1. Fetch "Ready to Schedule" resources (Side RTS) directly via OSLC
-        const sideUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${encodeURIComponent('status="RTBSCH"')}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=1000`;
+        // 1. Fetch "None" resources (Side RTS) from woadditionalresource
+        // We use a high maxItems to ensure we get ALL unscheduled blocks.
+        const sideUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=2000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`;
         const resSide = await fetch(sideUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) });
-        let rtsDetails: any[] = [];
+        let rtsResources: any[] = [];
         if (resSide.ok) {
             const dataSide = await resSide.json();
-            rtsDetails = dataSide['rdfs:member'] || dataSide.member || [];
+            const allSide = dataSide.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
+            rtsResources = allSide.filter((a: any) => a.Attributes?.STATUS && a.Attributes.STATUS.content === 'None');
         }
 
         // 2. Fetch "Scheduled" resources (Gantt)
@@ -177,17 +177,20 @@ export async function GET() {
             scheduledResources = allSched.filter((a: any) => a.Attributes?.STATUS && a.Attributes.STATUS.content !== 'None' && a.Attributes.SCHEDSTART);
         }
 
-        // 3. Extract unique WONUMs from SCHEDULED list only
+        // 3. Extract unique WONUMs from BOTH lists
+        const rtsWonums = rtsResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean);
         const schedWonums = scheduledResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean);
-        const uniqueSchedWonums = Array.from(new Set(schedWonums));
+        const allUniqueWonums = Array.from(new Set([...rtsWonums, ...schedWonums]));
 
-        // 4. Fetch WO Details for those Scheduled WONUMs via OSLC
-        let schedDetails: any[] = [];
+        // 4. Fetch WO Details for those WONUMs via OSLC
+        const selectParams = 'wonum,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode},locations{region}';
+        let woDetails: any[] = [];
         
-        if (uniqueSchedWonums.length > 0) {
+        if (allUniqueWonums.length > 0) {
             const chunkTasks = [];
-            for (let i = 0; i < uniqueSchedWonums.length; i += 30) {
-                const chunk = uniqueSchedWonums.slice(i, i + 30);
+            // Batch them in chunks of 50 to minimize requests but keep URL length safe
+            for (let i = 0; i < allUniqueWonums.length; i += 50) {
+                const chunk = allUniqueWonums.slice(i, i + 50);
                 const wonumStr = chunk.map(w => `"${w}"`).join(',');
                 const whereClause = encodeURIComponent(`wonum in [${wonumStr}]`);
                 const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=100`;
@@ -200,12 +203,9 @@ export async function GET() {
             }
             const chunkResults = await executeInBatches(chunkTasks, 5);
             for (const res of chunkResults) {
-                schedDetails = schedDetails.concat(res);
+                woDetails = woDetails.concat(res);
             }
         }
-
-        // Combine for location processing
-        const woDetails = [...rtsDetails, ...schedDetails];
 
         const clusterMap = new Map<string, number>();
         const uniqueLocations = new Set<string>();
@@ -247,8 +247,11 @@ export async function GET() {
         });
 
         // 5. Separate details back out based on which resource list they came from
-        // Wait, they are ALREADY separated into rtsDetails and schedDetails!
-        // We just need to make sure we don't accidentally process them multiple times.
+        // Also explicitly apply the "NEWWO" filter to RTS items as requested by the user
+        const rawRtsDetails = woDetails.filter(wo => rtsWonums.includes(wo['spi:wonum']));
+        const rtsDetails = rawRtsDetails.filter(wo => wo['spi:status'] === 'NEWWO');
+        const schedDetails = woDetails.filter(wo => schedWonums.includes(wo['spi:wonum']));
+
         // 6. Map and process
         const rtsOrders = processRawRecords(rtsDetails, clusterMap, false);
         const scheduledOrders = processRawRecords(schedDetails, clusterMap, true, scheduledResources);
