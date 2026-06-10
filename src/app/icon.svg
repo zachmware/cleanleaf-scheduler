@@ -1,0 +1,26 @@
+<svg width="256" height="256" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="64" height="64" rx="12" fill="#063f58"/>
+  
+  <!-- Left half of leaf -->
+  <path d="M32 8 C 32 8, 12 24, 12 42 C 12 54, 22 60, 32 60 Z" fill="#3cd876"/>
+  
+  <!-- Right half of leaf -->
+  <path d="M32 8 C 32 8, 52 24, 52 42 C 52 54, 42 60, 32 60 Z" fill="#15bc5e"/>
+  
+  <!-- Center line and Veins -->
+  <g stroke="#063f58" stroke-width="2" stroke-linecap="round">
+    <!-- Center line -->
+    <path d="M32 8 L 32 60"/>
+    
+    <!-- Left veins (UP and LEFT) -->
+    <path d="M32 22 L 18 16"/>
+    <path d="M32 36 L 15 28"/>
+    <path d="M32 48 L 16 42"/>
+    
+    <!-- Right veins (UP and RIGHT) -->
+    <path d="M32 26 L 48 18"/>
+    <path d="M32 40 L 51 30"/>
+    <path d="M32 52 L 48 44"/>
+  </g>
+</svg>
