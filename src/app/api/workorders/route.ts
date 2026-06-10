@@ -157,7 +157,7 @@ export async function GET() {
 
         // 1. Fetch "None" resources (Side RTS)
         // We order by WOADDITIONALRESOURCEID desc to get the most recently created resources
-        const sideUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=300&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`;
+        const sideUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=80&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`;
         const resSide = await fetch(sideUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) });
         let rtsResources: any[] = [];
         if (resSide.ok) {
@@ -168,7 +168,7 @@ export async function GET() {
 
         // 2. Fetch "Scheduled" resources (Gantt)
         // We order by SCHEDSTART desc to get the most recently scheduled items
-        const schedUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=500&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`;
+        const schedUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=120&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`;
         const resSched = await fetch(schedUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) });
         let scheduledResources: any[] = [];
         if (resSched.ok) {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 export const revalidate = 300; // Cache the Maximo response for 5 minutes
+export const maxDuration = 60; // Allow Vercel Hobby serverless to run up to 60s
 
 export async function GET() {
     try {
@@ -16,6 +17,17 @@ export async function GET() {
             'Content-Type': 'application/json',
             'maxauth': encodedAuth,
             'x-public-uri': 'https://cleanleafmax.softwrench2.com/maximo/oslc'
+        };
+        
+        // Helper to batch execute promises so we don't DDOS Maximo
+        const executeInBatches = async (tasks: (() => Promise<any>)[], batchSize = 5) => {
+             let results: any[] = [];
+             for (let i = 0; i < tasks.length; i += batchSize) {
+                 const batch = tasks.slice(i, i + batchSize);
+                 const batchResults = await Promise.all(batch.map(t => t()));
+                 results = results.concat(batchResults);
+             }
+             return results;
         };
         
         // 1. Fetch valid Region domains
@@ -75,10 +87,10 @@ export async function GET() {
         const finalRoster = Array.from(deduplicatedMap.values());
         
         // 3. Resolve PersonGroup (Region) for each Technician via MBO REST
-        const rosterPromises = finalRoster.map(async (tech) => {
+        const rosterTasks = finalRoster.map((tech) => async () => {
             try {
                 const url = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/persongroupteam?_format=json&_maxItems=20&respparty=~eq~${tech.id}`;
-                const resTeam = await fetch(url, { headers });
+                const resTeam = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
                 if (resTeam.ok) {
                     const dataTeam = await resTeam.json();
                     const groups = dataTeam.PERSONGROUPTEAMMboSet?.PERSONGROUPTEAM || [];
@@ -99,8 +111,8 @@ export async function GET() {
             return tech;
         });
 
-        const completedRoster = await Promise.all(rosterPromises);
-        const filteredRoster = completedRoster.filter(t => t.region !== 'Unassigned');
+        await executeInBatches(rosterTasks, 5);
+        const filteredRoster = finalRoster.filter(t => t.region !== 'Unassigned');
         
         return NextResponse.json(filteredRoster);
         
