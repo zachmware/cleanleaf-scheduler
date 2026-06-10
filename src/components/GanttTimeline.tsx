@@ -19,7 +19,6 @@ function TimelineSlot({ techId, dateStr, timeHour, rowHeight, children, isOutsid
         flex: 1, 
         minWidth: '20px', 
         borderRight: '1px solid var(--border-color)', 
-        borderBottom: '1px solid var(--border-color)',
         backgroundColor: isOver ? 'rgba(59, 130, 246, 0.1)' : isOutsideBusinessHours ? 'rgba(0,0,0,0.05)' : 'transparent',
         outline: isOver ? '2px dashed var(--primary)' : 'none',
         outlineOffset: '-2px',
@@ -291,8 +290,8 @@ function TimezoneGroup({ tz, techs, dates, scheduledOrders, onUnschedule, onBloc
            const rowHeight = Math.max(60, 60 + (maxTracksForTech - 1) * 56);
 
            return (
-            <div key={tech.id} style={{ display: 'flex' }}>
-               <div style={{ width: '240px', minWidth: '240px', maxWidth: '240px', flexShrink: 0, backgroundColor: 'var(--surface-color)', padding: '16px', borderRight: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div key={tech.id} style={{ display: 'flex', borderBottom: '1px solid var(--border-color)' }}>
+               <div style={{ width: '240px', minWidth: '240px', maxWidth: '240px', flexShrink: 0, backgroundColor: 'var(--surface-color)', padding: '16px', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                  <div style={{ fontWeight: 600 }}>{tech.name}</div>
                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tech.homeAddress}</div>
                </div>
