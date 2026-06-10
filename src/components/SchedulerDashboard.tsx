@@ -5,7 +5,8 @@ import { DndContext, DragEndEvent, DragOverlay, useSensor, useSensors, PointerSe
 import { mockRTSWorkOrders, mockScheduledOrders, WorkOrder, Technician } from '@/data/mockData';
 import SidebarRTS from './SidebarRTS';
 import GanttTimeline from './GanttTimeline';
-import { Settings, Play, CalendarDays, RefreshCw } from 'lucide-react';
+import ReportsTab from './ReportsTab';
+import { Settings, Play, CalendarDays, RefreshCw, LayoutDashboard, FileText } from 'lucide-react';
 
 export default function SchedulerDashboard() {
   const [rtsOrders, setRtsOrders] = useState<WorkOrder[]>([]);
@@ -21,6 +22,7 @@ export default function SchedulerDashboard() {
   const [dbError, setDbError] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'gantt' | 'reports'>('gantt');
   const abortScheduling = useRef(false);
 
   const fetchData = (isSoftRefresh = false) => {
@@ -433,6 +435,46 @@ export default function SchedulerDashboard() {
             </div>
             
             <div className="topbar-controls">
+              {/* Tab Toggle */}
+              <div style={{ display: 'flex', background: 'var(--surface-color)', borderRadius: '8px', padding: '4px', gap: '4px', marginRight: '16px' }}>
+                 <button 
+                   onClick={() => setActiveTab('gantt')}
+                   style={{
+                     background: activeTab === 'gantt' ? 'var(--primary)' : 'transparent',
+                     color: activeTab === 'gantt' ? '#fff' : 'var(--text-muted)',
+                     border: 'none',
+                     padding: '6px 16px',
+                     borderRadius: '6px',
+                     cursor: 'pointer',
+                     fontWeight: 600,
+                     display: 'flex',
+                     alignItems: 'center',
+                     gap: '6px',
+                     transition: 'all 0.2s'
+                   }}
+                 >
+                   <LayoutDashboard size={16} /> Gantt
+                 </button>
+                 <button 
+                   onClick={() => setActiveTab('reports')}
+                   style={{
+                     background: activeTab === 'reports' ? 'var(--primary)' : 'transparent',
+                     color: activeTab === 'reports' ? '#fff' : 'var(--text-muted)',
+                     border: 'none',
+                     padding: '6px 16px',
+                     borderRadius: '6px',
+                     cursor: 'pointer',
+                     fontWeight: 600,
+                     display: 'flex',
+                     alignItems: 'center',
+                     gap: '6px',
+                     transition: 'all 0.2s'
+                   }}
+                 >
+                   <FileText size={16} /> Reports
+                 </button>
+              </div>
+
               {/* Day Toggle requested by user */}
               <div style={{ display: 'flex', background: 'var(--surface-color)', borderRadius: '8px', padding: '4px', gap: '4px' }}>
                  {[1, 2, 3, 7].map(days => (
@@ -529,7 +571,7 @@ export default function SchedulerDashboard() {
                  <p style={{ fontSize: '1.2rem', fontWeight: 600 }}>Please wait while the Maximo query is processed...</p>
                  <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
                </div>
-            ) : (
+            ) : activeTab === 'gantt' ? (
                <GanttTimeline 
                   days={viewDays} 
                   offsetDays={viewOffsetDays}
@@ -537,6 +579,11 @@ export default function SchedulerDashboard() {
                   scheduledOrders={scheduledOrders} 
                   onUnschedule={handleUnschedule}
                   onStatusChange={handleStatusChange}
+               />
+            ) : (
+               <ReportsTab 
+                  scheduledOrders={scheduledOrders} 
+                  technicians={technicians} 
                />
             )}
           </div>
