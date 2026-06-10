@@ -183,7 +183,7 @@ export async function GET() {
         const allUniqueWonums = Array.from(new Set([...rtsWonums, ...schedWonums]));
 
         // 4. Fetch WO Details for those WONUMs via OSLC
-        const selectParams = 'wonum,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode},locations{region}';
+        const selectParams = 'wonum,status,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode},locations{region}';
         let woDetails: any[] = [];
         
         if (allUniqueWonums.length > 0) {

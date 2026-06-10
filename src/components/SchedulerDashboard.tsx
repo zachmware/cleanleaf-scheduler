@@ -429,7 +429,7 @@ export default function SchedulerDashboard() {
           <div className="topbar">
             <div className="brand">
               <CalendarDays className="h-6 w-6" style={{ color: 'var(--primary)' }} />
-              Solar Ops Dispatch
+              Cleanleaf Scheduling Tool
             </div>
             
             <div className="topbar-controls">

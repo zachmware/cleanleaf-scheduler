@@ -15,7 +15,8 @@ function TimelineSlot({ techId, dateStr, timeHour, rowHeight, children, isOutsid
     <div 
       ref={setNodeRef}
       style={{ 
-        height: `${rowHeight}px`,
+        height: '100%',
+        minHeight: `${rowHeight}px`,
         flex: 1, 
         minWidth: '20px', 
         borderRight: '1px solid var(--border-color)', 
