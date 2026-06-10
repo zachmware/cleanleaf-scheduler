@@ -9,7 +9,7 @@ export default function ReportsTab({ scheduledOrders, technicians }: { scheduled
   targetDate.setDate(targetDate.getDate() + reportDayOffset);
   const targetDateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
 
-  const techMap = new Map(technicians.map(t => [t.id, t.name]));
+  const techMap = new Map(technicians.map(t => [(t.id || '').toLowerCase(), t.name]));
 
   // Filter orders for the selected target day
   const dailyOrders = scheduledOrders.filter(o => {
@@ -21,8 +21,8 @@ export default function ReportsTab({ scheduledOrders, technicians }: { scheduled
 
   // Sort by tech, then by start time
   dailyOrders.sort((a, b) => {
-      const techA = techMap.get(a.assignedTechId || '') || '';
-      const techB = techMap.get(b.assignedTechId || '') || '';
+      const techA = techMap.get((a.assignedTechId || '').toLowerCase()) || a.assignedTechId || 'Unassigned';
+      const techB = techMap.get((b.assignedTechId || '').toLowerCase()) || b.assignedTechId || 'Unassigned';
       if (techA !== techB) return techA.localeCompare(techB);
       
       const timeA = new Date(a.checkInTime || a.startTime!).getTime();
@@ -101,7 +101,7 @@ export default function ReportsTab({ scheduledOrders, technicians }: { scheduled
                 ) : (
                    dailyOrders.map(order => (
                       <tr key={order.id} style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
-                         <td style={{ padding: '12px 16px', fontWeight: 600 }}>{techMap.get(order.assignedTechId || '') || 'Unassigned'}</td>
+                         <td style={{ padding: '12px 16px', fontWeight: 600 }}>{techMap.get((order.assignedTechId || '').toLowerCase()) || order.assignedTechId || 'Unassigned'}</td>
                          <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                             {formatTime(order.checkInTime || order.startTime)} - {calculateEndTime(order.checkInTime || order.startTime, order.durationHours)}
                          </td>
