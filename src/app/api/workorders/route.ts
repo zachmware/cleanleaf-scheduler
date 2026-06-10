@@ -249,8 +249,43 @@ export async function GET() {
         // 5. Separate details back out based on which resource list they came from
         // Also explicitly apply the "NEWWO" filter to RTS items as requested by the user
         const rawRtsDetails = woDetails.filter(wo => rtsWonums.includes(wo['spi:wonum']));
-        const rtsDetails = rawRtsDetails.filter(wo => wo['spi:status'] === 'NEWWO');
+        let rtsDetails = rawRtsDetails.filter(wo => wo['spi:status'] === 'NEWWO');
         const schedDetails = woDetails.filter(wo => schedWonums.includes(wo['spi:wonum']));
+
+        // 5.5. Fetch Case (SR) Status for RTS items to ensure they are STAGE6
+        const ticketIds = Array.from(new Set(rtsDetails.map(wo => wo['spi:origrecordid']).filter(Boolean)));
+        const srStatusMap = new Map<string, string>();
+        
+        if (ticketIds.length > 0) {
+            const srTasks = [];
+            for (let i = 0; i < ticketIds.length; i += 50) {
+                const chunk = ticketIds.slice(i, i + 50);
+                const ticketStr = chunk.map(t => `"${t}"`).join(',');
+                const whereClause = encodeURIComponent(`ticketid in [${ticketStr}]`);
+                const srUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=${whereClause}&oslc.select=ticketid,status&oslc.pageSize=100`;
+                srTasks.push(() =>
+                    fetch(srUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
+                        .then(r => r.ok ? r.json() : null)
+                        .then(data => data ? (data['rdfs:member'] || data.member || []) : [])
+                        .catch(() => [])
+                );
+            }
+            const srResults = await executeInBatches(srTasks, 5);
+            for (const res of srResults) {
+                res.forEach((sr: any) => {
+                    if (sr['spi:ticketid'] && sr['spi:status']) {
+                        srStatusMap.set(sr['spi:ticketid'], sr['spi:status']);
+                    }
+                });
+            }
+        }
+
+        // Apply STAGE6 filter explicitly
+        rtsDetails = rtsDetails.filter(wo => {
+            const tid = wo['spi:origrecordid'];
+            if (!tid) return false; // Must have an SR to be STAGE6
+            return srStatusMap.get(tid) === 'STAGE6';
+        });
 
         // 6. Map and process
         const rtsOrders = processRawRecords(rtsDetails, clusterMap, false);
