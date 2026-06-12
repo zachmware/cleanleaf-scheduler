@@ -155,58 +155,80 @@ export async function GET() {
              return results;
         };
 
-        // 1. Fetch "None" resources (Side RTS) from woadditionalresource
-        // We use a high maxItems to ensure we get ALL unscheduled blocks.
-        const sideUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=2000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`;
-        const resSide = await fetch(sideUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) });
-        let rtsResources: any[] = [];
+        // 1. Fetch side resources, scheduled resources, and STAGE6 SRs concurrently
+        const s0 = Date.now();
+        console.log("Starting fetch 1...");
+        const [resSide, resSched, resSr] = await Promise.all([
+            fetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=2000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) }),
+            fetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=120&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) }),
+            fetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
+        ]);
+        console.log(`Fetch 1 complete in ${Date.now() - s0}ms`);
+
+        let allSide: any[] = [];
+        let allSched: any[] = [];
+        let allSrs: any[] = [];
+
         if (resSide.ok) {
             const dataSide = await resSide.json();
-            const allSide = dataSide.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
-            rtsResources = allSide.filter((a: any) => a.Attributes?.STATUS && a.Attributes.STATUS.content === 'None');
+            allSide = dataSide.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
         }
-
-        // 2. Fetch "Scheduled" resources (Gantt)
-        // We order by SCHEDSTART desc to get the most recently scheduled items
-        const schedUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=120&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`;
-        const resSched = await fetch(schedUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) });
-        let scheduledResources: any[] = [];
         if (resSched.ok) {
             const dataSched = await resSched.json();
-            const allSched = dataSched.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
-            scheduledResources = allSched.filter((a: any) => a.Attributes?.STATUS && a.Attributes.STATUS.content !== 'None' && a.Attributes.SCHEDSTART);
+            allSched = dataSched.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
+        }
+        if (resSr.ok) {
+            const dataSr = await resSr.json();
+            allSrs = dataSr['rdfs:member'] || dataSr.member || [];
         }
 
-        // 3. Extract unique WONUMs from BOTH lists
-        const rtsWonums = rtsResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean);
-        const schedWonums = scheduledResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean);
-        const allUniqueWonums = Array.from(new Set([...rtsWonums, ...schedWonums]));
+        // 2. Extract WONUMs
+        const rtsResources = allSide.filter((a: any) => a.Attributes?.STATUS && a.Attributes.STATUS.content === 'None');
+        const scheduledResources = allSched.filter((a: any) => a.Attributes?.STATUS && a.Attributes.STATUS.content !== 'None' && a.Attributes.SCHEDSTART);
 
-        // 4. Fetch WO Details for those WONUMs via OSLC
+        // 3. Extract unique STAGE6 SRs
+        const uniqueSrs = Array.from(new Set(allSrs.map(sr => sr['spi:ticketid']).filter(Boolean)));
+
+        // 4. Fetch WO Details for those SRs where WO status is NEWWO
         const selectParams = 'wonum,status,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode},locations{region}';
         let woDetails: any[] = [];
         
-        if (allUniqueWonums.length > 0) {
+        console.log(`Unique STAGE6 SRs: ${uniqueSrs.length}`);
+        const s1 = Date.now();
+        if (uniqueSrs.length > 0) {
             const chunkTasks = [];
-            // Batch them in chunks of 50 to minimize requests but keep URL length safe
-            for (let i = 0; i < allUniqueWonums.length; i += 50) {
-                const chunk = allUniqueWonums.slice(i, i + 50);
-                const wonumStr = chunk.map(w => `"${w}"`).join(',');
-                const whereClause = encodeURIComponent(`wonum in [${wonumStr}]`);
-                const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=100`;
+            // Batch them in chunks of 80 SRs
+            for (let i = 0; i < uniqueSrs.length; i += 80) {
+                const chunk = uniqueSrs.slice(i, i + 80);
+                const srStr = chunk.map(w => `"${w}"`).join(',');
+                const whereClause = encodeURIComponent(`status="NEWWO" and origrecordid in [${srStr}]`);
+                const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
                 chunkTasks.push(() =>
                     fetch(osUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
                         .then(r => r.ok ? r.json() : null)
                         .then(data => data ? (data['rdfs:member'] || data.member || []) : [])
-                        .catch(() => [])
                 );
             }
-            const chunkResults = await executeInBatches(chunkTasks, 5);
+            
+            // Execute in larger concurrent batches for speed
+            const chunkResults = await executeInBatches(chunkTasks, 10);
             for (const res of chunkResults) {
                 woDetails = woDetails.concat(res);
             }
         }
+        console.log(`Fetch WOs complete in ${Date.now() - s1}ms. Found ${woDetails.length}`);
 
+        // Filter woDetails by RTS/Sched WONUMs and process
+        const finalValidWosMap = new Map();
+        for (const wo of woDetails) {
+            finalValidWosMap.set(wo['spi:wonum'], wo);
+        }
+
+        // 5. Process records
+        let finalRtsOrders: any[] = [];
+        let finalSchedOrders: any[] = [];
+
+        // Cluster Map
         const clusterMap = new Map<string, number>();
         const uniqueLocations = new Set<string>();
         woDetails.forEach((wo: any) => {
@@ -215,85 +237,53 @@ export async function GET() {
              if (loc !== 'UNKNOWN') uniqueLocations.add(loc);
         });
 
+        // Build RTS
+        for (const res of rtsResources) {
+            const wonum = res.Attributes?.WONUM?.content;
+            if (wonum && finalValidWosMap.has(wonum)) {
+                const wo = finalValidWosMap.get(wonum);
+                const processed = processRawRecords([wo], clusterMap, false, rtsResources);
+                if (processed.length > 0) finalRtsOrders.push(processed[0]);
+                finalValidWosMap.delete(wonum); // prevent dups
+            }
+        }
+
+        const finalValidWosMapSched = new Map();
+        for (const wo of woDetails) {
+            finalValidWosMapSched.set(wo['spi:wonum'], wo);
+        }
+
+        for (const res of scheduledResources) {
+            const wonum = res.Attributes?.WONUM?.content;
+            if (wonum && finalValidWosMapSched.has(wonum)) {
+                const wo = finalValidWosMapSched.get(wonum);
+                const processed = processRawRecords([wo], clusterMap, true, scheduledResources);
+                if (processed.length > 0) finalSchedOrders.push(processed[0]);
+                finalValidWosMapSched.delete(wonum);
+            }
+        }
+
         const locationRegionMap = new Map<string, string>();
-        if (uniqueLocations.size > 0) {
-            const locArray = Array.from(uniqueLocations);
-            const locTasks = [];
-            for (let i = 0; i < locArray.length; i += 30) {
-                const chunk = locArray.slice(i, i + 30).map(c => encodeURIComponent(c)).join(',');
-                const locUrl = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/locations?_format=json&location=~in~${chunk}&_inclCol=location,region`;
-                locTasks.push(() =>
-                    fetch(locUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
-                        .then(r => r.ok ? r.json() : null)
-                        .then(data => data ? (data?.LOCATIONSMboSet?.LOCATIONS || []) : [])
-                        .catch(() => [])
-                );
-            }
-            const locResults = await executeInBatches(locTasks, 5);
-            for (const locs of locResults) {
-                locs.forEach((l: any) => {
-                     if (l.Attributes?.LOCATION?.content && l.Attributes?.REGION?.content) {
-                         locationRegionMap.set(l.Attributes.LOCATION.content, l.Attributes.REGION.content);
-                     }
-                });
-            }
-        }
         
-        // Inject explicitly resolved MBO Region back into woDetails
-        woDetails.forEach((wo: any) => {
-             if (wo['spi:location'] && locationRegionMap.has(wo['spi:location'])) {
-                 wo._explicitMboRegion = locationRegionMap.get(wo['spi:location']);
-             }
-        });
-
-        // 5. Separate details back out based on which resource list they came from
-        // Also explicitly apply the "NEWWO" filter to RTS items as requested by the user
-        const rawRtsDetails = woDetails.filter(wo => rtsWonums.includes(wo['spi:wonum']));
-        let rtsDetails = rawRtsDetails.filter(wo => wo['spi:status'] === 'NEWWO');
-        const schedDetails = woDetails.filter(wo => schedWonums.includes(wo['spi:wonum']));
-
-        // 5.5. Fetch Case (SR) Status for RTS items to ensure they are STAGE6
-        const ticketIds = Array.from(new Set(rtsDetails.map(wo => wo['spi:origrecordid']).filter(Boolean)));
-        const srStatusMap = new Map<string, string>();
+        // Note: The MBO 'locations' object does not contain 'REGION', so querying it 
+        // takes 30s for 400+ locations and returns nothing useful. 
+        // We will default region to the State/Province or "Unknown" to avoid API timeouts.
         
-        if (ticketIds.length > 0) {
-            const srTasks = [];
-            for (let i = 0; i < ticketIds.length; i += 50) {
-                const chunk = ticketIds.slice(i, i + 50);
-                const ticketStr = chunk.map(t => `"${t}"`).join(',');
-                const whereClause = encodeURIComponent(`ticketid in [${ticketStr}]`);
-                const srUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=${whereClause}&oslc.select=ticketid,status&oslc.pageSize=100`;
-                srTasks.push(() =>
-                    fetch(srUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
-                        .then(r => r.ok ? r.json() : null)
-                        .then(data => data ? (data['rdfs:member'] || data.member || []) : [])
-                        .catch(() => [])
-                );
-            }
-            const srResults = await executeInBatches(srTasks, 5);
-            for (const res of srResults) {
-                res.forEach((sr: any) => {
-                    if (sr['spi:ticketid'] && sr['spi:status']) {
-                        srStatusMap.set(sr['spi:ticketid'], sr['spi:status']);
-                    }
-                });
-            }
-        }
-
-        // Apply STAGE6 filter explicitly
-        rtsDetails = rtsDetails.filter(wo => {
-            const tid = wo['spi:origrecordid'];
-            if (!tid) return false; // Must have an SR to be STAGE6
-            return srStatusMap.get(tid) === 'STAGE6';
+        // Inject explicitly resolved Region back into woDetails
+        finalRtsOrders.forEach((wo: any) => {
+             const wosAddr = wo._raw && wo._raw['spi:woserviceaddress'] && wo._raw['spi:woserviceaddress'][0];
+             const stateLoc = wosAddr ? wosAddr['spi:stateprovince_description'] || wosAddr['spi:stateprovince'] : undefined;
+             wo.region = stateLoc || 'Unknown';
         });
-
-        // 6. Map and process
-        const rtsOrders = processRawRecords(rtsDetails, clusterMap, false);
-        const scheduledOrders = processRawRecords(schedDetails, clusterMap, true, scheduledResources);
+        finalSchedOrders.forEach((wo: any) => {
+             const wosAddr = wo._raw && wo._raw['spi:woserviceaddress'] && wo._raw['spi:woserviceaddress'][0];
+             const stateLoc = wosAddr ? wosAddr['spi:stateprovince_description'] || wosAddr['spi:stateprovince'] : undefined;
+             wo.region = stateLoc || 'Unknown';
+        });
 
         return NextResponse.json({
-            rtsOrders,
-            scheduledOrders
+            rtsOrders: finalRtsOrders,
+            scheduledOrders: finalSchedOrders
         });
 
     } catch (err: any) {

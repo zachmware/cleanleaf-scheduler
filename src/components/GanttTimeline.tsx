@@ -291,7 +291,7 @@ function TimezoneGroup({ tz, techs, dates, scheduledOrders, onUnschedule, onBloc
            const rowHeight = Math.max(60, 60 + (maxTracksForTech - 1) * 56);
 
            return (
-            <div key={tech.id} style={{ display: 'flex', borderBottom: '1px solid var(--border-color)' }}>
+            <div key={tech.id} style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid var(--border-color)' }}>
                <div style={{ width: '240px', minWidth: '240px', maxWidth: '240px', flexShrink: 0, backgroundColor: 'var(--surface-color)', padding: '16px', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                  <div style={{ fontWeight: 600 }}>{tech.name}</div>
                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tech.homeAddress}</div>
@@ -299,7 +299,7 @@ function TimezoneGroup({ tz, techs, dates, scheduledOrders, onUnschedule, onBloc
                
                {techDaysData.map(({ dateStr, todaysOrdersForTech, orderContextMap }: any, di: number) => {
                  return (
-                 <div key={di} style={{ display: 'flex', flex: 1 }}>
+                 <div key={di} style={{ display: 'flex', flex: 1, alignItems: 'stretch' }}>
                     {hoursList.map(hour => {
                        // Find ALL orders that start in this specific hour slot
                        const ordersInSlot = todaysOrdersForTech.filter((o: WorkOrder) => {
