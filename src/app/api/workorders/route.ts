@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-export const revalidate = 300; // Cache the Maximo response for 5 minutes
+export const revalidate = 0; // Disable cache so Maximo updates are instant
 export const maxDuration = 60; // Allow Vercel Hobby serverless to run up to 60s
 
 function processRawRecords(members: any[], clusterMap: Map<string, number>, isScheduled: boolean, assignments?: any[]) {
@@ -160,7 +160,7 @@ export async function GET() {
         console.log("Starting fetch 1...");
         const [resSide, resSched, resSr] = await Promise.all([
             fetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=2000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) }),
-            fetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=120&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) }),
+            fetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=2000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) }),
             fetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
         ]);
         console.log(`Fetch 1 complete in ${Date.now() - s0}ms`);
