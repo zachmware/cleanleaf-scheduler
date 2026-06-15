@@ -160,7 +160,7 @@ export async function GET() {
         console.log("Starting fetch 1...");
         const [resSide, resSched, resSr] = await Promise.all([
             fetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=2000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) }),
-            fetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=2000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) }),
+            fetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) }),
             fetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
         ]);
         console.log(`Fetch 1 complete in ${Date.now() - s0}ms`);
@@ -201,7 +201,7 @@ export async function GET() {
             for (let i = 0; i < uniqueSrs.length; i += 150) {
                 const chunk = uniqueSrs.slice(i, i + 150);
                 const srStr = chunk.map(w => `"${w}"`).join(',');
-                const whereClause = encodeURIComponent(`status="NEWWO" and origrecordid in [${srStr}]`);
+                const whereClause = encodeURIComponent(`origrecordid in [${srStr}]`);
                 const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
                 chunkTasks.push(() =>
                     fetch(osUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
@@ -242,8 +242,10 @@ export async function GET() {
             const wonum = res.Attributes?.WONUM?.content;
             if (wonum && finalValidWosMap.has(wonum)) {
                 const wo = finalValidWosMap.get(wonum);
-                const processed = processRawRecords([wo], clusterMap, false, rtsResources);
-                if (processed.length > 0) finalRtsOrders.push(processed[0]);
+                if (wo['spi:status'] === 'NEWWO') {
+                    const processed = processRawRecords([wo], clusterMap, false, rtsResources);
+                    if (processed.length > 0) finalRtsOrders.push(processed[0]);
+                }
                 finalValidWosMap.delete(wonum); // prevent dups
             }
         }
