@@ -87,31 +87,42 @@ export async function GET() {
         const finalRoster = Array.from(deduplicatedMap.values());
         
         // 3. Resolve PersonGroup (Region) for each Technician via MBO REST
-        const rosterTasks = finalRoster.map((tech) => async () => {
-            try {
-                const url = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/persongroupteam?_format=json&_maxItems=20&respparty=~eq~${tech.id}`;
-                const resTeam = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
-                if (resTeam.ok) {
-                    const dataTeam = await resTeam.json();
-                    const groups = dataTeam.PERSONGROUPTEAMMboSet?.PERSONGROUPTEAM || [];
-                    for (const group of groups) {
-                        const pGroup = group.Attributes?.PERSONGROUP?.content;
-                        if (pGroup) {
-                            const upperGroup = pGroup.toUpperCase();
-                            if (validRegions.has(upperGroup)) {
-                                tech.region = validRegionMap.get(upperGroup); // Map to original casing
-                                break;
-                            }
-                        }
+        const techIds = finalRoster.map(t => encodeURIComponent(t.id));
+        const groupTasks = [];
+        
+        for (let i = 0; i < techIds.length; i += 40) {
+            const chunk = techIds.slice(i, i + 40).join(',');
+            const url = `https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/persongroupteam?_format=json&respparty=~in~${chunk}&_inclCol=respparty,persongroup`;
+            groupTasks.push(() => fetch(url, { headers, signal: AbortSignal.timeout(15000) })
+                .then(r => r.ok ? r.json() : null)
+                .then(data => data ? (data.PERSONGROUPTEAMMboSet?.PERSONGROUPTEAM || []) : [])
+                .catch(() => [])
+            );
+        }
+
+        const groupResults = await executeInBatches(groupTasks, 5);
+        
+        // Map Region to Techs
+        const techRegionMap = new Map<string, string>();
+        for (const groups of groupResults) {
+            for (const group of groups) {
+                const pGroup = group.Attributes?.PERSONGROUP?.content;
+                const rParty = group.Attributes?.RESPPARTY?.content;
+                if (pGroup && rParty) {
+                    const upperGroup = pGroup.toUpperCase();
+                    if (validRegions.has(upperGroup)) {
+                        techRegionMap.set(rParty, validRegionMap.get(upperGroup)!);
                     }
                 }
-            } catch (e) {
-                // Silently fallback on error
             }
-            return tech;
+        }
+        
+        finalRoster.forEach(tech => {
+            if (techRegionMap.has(tech.id)) {
+                tech.region = techRegionMap.get(tech.id);
+            }
         });
 
-        await executeInBatches(rosterTasks, 5);
         const filteredRoster = finalRoster.filter(t => t.region !== 'Unassigned');
         
         return NextResponse.json(filteredRoster);

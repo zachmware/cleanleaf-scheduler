@@ -197,9 +197,9 @@ export async function GET() {
         const s1 = Date.now();
         if (uniqueSrs.length > 0) {
             const chunkTasks = [];
-            // Batch them in chunks of 80 SRs
-            for (let i = 0; i < uniqueSrs.length; i += 80) {
-                const chunk = uniqueSrs.slice(i, i + 80);
+            // Batch them in chunks of 150 SRs
+            for (let i = 0; i < uniqueSrs.length; i += 150) {
+                const chunk = uniqueSrs.slice(i, i + 150);
                 const srStr = chunk.map(w => `"${w}"`).join(',');
                 const whereClause = encodeURIComponent(`status="NEWWO" and origrecordid in [${srStr}]`);
                 const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
@@ -211,7 +211,7 @@ export async function GET() {
             }
             
             // Execute in larger concurrent batches for speed
-            const chunkResults = await executeInBatches(chunkTasks, 10);
+            const chunkResults = await executeInBatches(chunkTasks, 5);
             for (const res of chunkResults) {
                 woDetails = woDetails.concat(res);
             }
