@@ -43,11 +43,7 @@ export default function SchedulerDashboard() {
          if (woData && woData.rtsOrders) {
              setRtsOrders(woData.rtsOrders);
              setScheduledOrders(woData.scheduledOrders || []);
-             
-             if (woData.scheduledOrders && woData.scheduledOrders.length > 0 && !isSoftRefresh) {
-                 const mostRecentDateStr = woData.scheduledOrders[0].startTime.split('T')[0];
-                 setTargetDateStr(mostRecentDateStr);
-             }
+             // Removed the logic that forced targetDateStr to jump to scheduledOrders[0] (which is the furthest future date)
          } else if (woData && Array.isArray(woData)) {
              setRtsOrders(woData); // Fallback for cached legacy response
          }

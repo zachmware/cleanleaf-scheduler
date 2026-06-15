@@ -265,23 +265,7 @@ export async function GET() {
             }
         }
 
-        const locationRegionMap = new Map<string, string>();
-        
-        // Note: The MBO 'locations' object does not contain 'REGION', so querying it 
-        // takes 30s for 400+ locations and returns nothing useful. 
-        // We will default region to the State/Province or "Unknown" to avoid API timeouts.
-        
-        // Inject explicitly resolved Region back into woDetails
-        finalRtsOrders.forEach((wo: any) => {
-             const wosAddr = wo._raw && wo._raw['spi:woserviceaddress'] && wo._raw['spi:woserviceaddress'][0];
-             const stateLoc = wosAddr ? wosAddr['spi:stateprovince_description'] || wosAddr['spi:stateprovince'] : undefined;
-             wo.region = stateLoc || 'Unknown';
-        });
-        finalSchedOrders.forEach((wo: any) => {
-             const wosAddr = wo._raw && wo._raw['spi:woserviceaddress'] && wo._raw['spi:woserviceaddress'][0];
-             const stateLoc = wosAddr ? wosAddr['spi:stateprovince_description'] || wosAddr['spi:stateprovince'] : undefined;
-             wo.region = stateLoc || 'Unknown';
-        });
+        // Region is automatically resolved via processRawRecords using fallback logic.
 
         return NextResponse.json({
             rtsOrders: finalRtsOrders,
