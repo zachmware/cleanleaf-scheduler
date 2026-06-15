@@ -270,6 +270,10 @@ export async function GET() {
         return NextResponse.json({
             rtsOrders: finalRtsOrders,
             scheduledOrders: finalSchedOrders
+        }, {
+            headers: {
+                'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0'
+            }
         });
 
     } catch (err: any) {

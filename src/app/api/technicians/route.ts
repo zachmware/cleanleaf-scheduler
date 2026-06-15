@@ -125,7 +125,11 @@ export async function GET() {
 
         const filteredRoster = finalRoster.filter(t => t.region !== 'Unassigned');
         
-        return NextResponse.json(filteredRoster);
+        return NextResponse.json(filteredRoster, {
+            headers: {
+                'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0'
+            }
+        });
         
     } catch (err: any) {
         console.error("Technician API Error:", err);

@@ -31,11 +31,11 @@ export default function SchedulerDashboard() {
      setDbError(null);
 
      Promise.all([
-        fetch('/api/workorders').then(res => {
+        fetch(`/api/workorders?t=${Date.now()}`).then(res => {
             if (!res.ok) throw new Error('WorkOrder API Error');
             return res.json();
         }),
-        fetch('/api/technicians').then(res => {
+        fetch(`/api/technicians?t=${Date.now()}`).then(res => {
             if (!res.ok) throw new Error('Technician API Error');
             return res.json();
         })
