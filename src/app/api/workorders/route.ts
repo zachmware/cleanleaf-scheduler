@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 
 export const revalidate = 0; // Disable cache so Maximo updates are instant
-export const maxDuration = 60; // Allow Vercel Hobby serverless to run up to 60s
 
 function processRawRecords(members: any[], clusterMap: Map<string, number>, isScheduled: boolean, assignments?: any[]) {
     const rawRecords = members.map((wo: any) => {
@@ -11,7 +10,13 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
         
         const rawDesc = wo['spi:description'] || `Work Order ${wo['spi:wonum']}`;
         const cleanDesc = rawDesc.replace(/\[.*?\]/g, '').trim();
-        
+        const stateVal = (addr['spi:stateprovince'] || addr['spi:stateprovince_description'] || '').toUpperCase();
+        let mappedRegion = 'Midwest';
+        if (['NC', 'VA', 'MD', 'PA', 'GA', 'SC', 'NORTH CAROLINA', 'GEORGIA', 'VIRGINIA', 'SOUTH CAROLINA'].includes(stateVal)) mappedRegion = 'Mid-Atlantic';
+        else if (['NY', 'NJ', 'MA', 'CT', 'NEW YORK', 'NEW JERSEY'].includes(stateVal)) mappedRegion = 'Northeast';
+        else if (['CA', 'NV', 'OR', 'WA', 'CALIFORNIA', 'ARIZONA', 'AZ'].includes(stateVal)) mappedRegion = 'West';
+        else if (['TX', 'FL', 'AL', 'LA', 'TEXAS', 'FLORIDA'].includes(stateVal)) mappedRegion = 'South';
+
         return {
             id: wo['spi:wonum'],
             title: cleanDesc,
@@ -24,7 +29,7 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
             customer: wo['spi:client'] || wo['spi:vendor'] || 'Unknown Client', 
             location: wo['spi:location'] || 'UNKNOWN',
             projectName: addr['spi:description'] || wo['spi:location'] || 'Unknown Project',
-            explicitRegion: explicitMboRegion || locNode['spi:region'] || ((addr['spi:stateprovince'] || '').toUpperCase() === 'NC' ? 'Mid-Atlantic' : 'Midwest'), 
+            explicitRegion: explicitMboRegion || locNode['spi:region'] || mappedRegion, 
             estdur: wo['spi:estdur'] || 2,
             formattedaddress: [addr['spi:streetaddress'], addr['spi:city'], addr['spi:stateprovince']].filter(Boolean).join(', ') || 'Unknown Address', 
             streetaddress: addr['spi:streetaddress'] || 'Unknown',
@@ -198,8 +203,8 @@ export async function GET() {
         if (uniqueSrs.length > 0) {
             const chunkTasks = [];
             // Batch them in chunks of 150 SRs
-            for (let i = 0; i < uniqueSrs.length; i += 150) {
-                const chunk = uniqueSrs.slice(i, i + 150);
+            for (let i = 0; i < uniqueSrs.length; i += 40) {
+                const chunk = uniqueSrs.slice(i, i + 40);
                 const srStr = chunk.map(w => `"${w}"`).join(',');
                 const whereClause = encodeURIComponent(`origrecordid in [${srStr}]`);
                 const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
