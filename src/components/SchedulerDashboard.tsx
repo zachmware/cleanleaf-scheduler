@@ -374,6 +374,69 @@ export default function SchedulerDashboard() {
             setScheduledOrders([...scheduled]);
         }
     }
+
+    // ============================================
+    // CROSS-REGION OVERFLOW: Fill empty tech schedules
+    // Any tech with 0 assignments gets cases from ANY region
+    // ============================================
+    const assignedIdsSoFar = new Set(scheduled.map(o => o.id));
+    const emptyTechs = technicians.filter(t => {
+        return !scheduled.some(o => o.assignedTechId === t.id && (o.checkInTime || o.startTime || '').split('T')[0] === targetDateStr);
+    });
+
+    if (emptyTechs.length > 0) {
+        // Get all remaining RTS orders not yet assigned
+        const overflowPool = targetRTSPool
+            .filter(o => !assignedIdsSoFar.has(o.id))
+            .sort((a, b) => b.priority - a.priority);
+
+        for (const tech of emptyTechs) {
+            if (abortScheduling.current) break;
+            iteration++;
+            setScheduleProgress({ current: iteration, total: targetRTSPool.length, title: `Cross-region: ${tech.name}` });
+            await new Promise(resolve => setTimeout(resolve, 10));
+
+            const techHome = tech.homeAddress && tech.homeAddress !== 'Unknown' ? tech.homeAddress : `${tech.region || 'US'}`;
+            let currentTime = new Date(targetDateObj);
+            currentTime.setHours(businessStart, 0, 0, 0);
+            let currentLocation = techHome;
+            const eveningLimit2 = new Date(targetDateObj);
+            eveningLimit2.setHours(businessEnd, 0, 0, 0);
+
+            // Greedily assign closest feasible jobs
+            const techAssigned: string[] = [];
+            for (const order of overflowPool) {
+                if (assignedIdsSoFar.has(order.id)) continue;
+                const dest = order.projectAddress || order.projectName || '';
+                if (!dest) continue;
+
+                const driveTo = await getCachedDistance(currentLocation, dest);
+                const driveHome = await getCachedDistance(dest, techHome);
+                const jobMins = (order.durationHours || 2) * 60;
+
+                const proposedCheckIn = new Date(currentTime.getTime() + (driveTo * 60000));
+                const proposedCheckOut = new Date(proposedCheckIn.getTime() + (jobMins * 60000));
+                const returnHomeTime = new Date(proposedCheckOut.getTime() + (driveHome * 60000));
+
+                if (returnHomeTime <= eveningLimit2 && driveTo < 180) { // Max 3hr drive
+                    scheduled.push({
+                        ...order,
+                        status: 'SCHEDULED',
+                        assignedTechId: tech.id,
+                        startTime: proposedCheckIn.toISOString(),
+                        checkInTime: proposedCheckIn.toISOString(),
+                    });
+                    assignedIdsSoFar.add(order.id);
+                    techAssigned.push(order.id);
+                    currentTime = proposedCheckOut;
+                    currentLocation = dest;
+                }
+            }
+            if (techAssigned.length > 0) {
+                setScheduledOrders([...scheduled]);
+            }
+        }
+    }
     
     const assignedIds = new Set(scheduled.map(o => o.id));
     setScheduledOrders(scheduled);
