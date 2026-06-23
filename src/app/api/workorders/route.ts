@@ -32,13 +32,14 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
         const stateVal = addr['spi:stateprovince'] || addr['spi:stateprovince_description'] || '';
         const cityVal = addr['spi:city'] || '';
         const mappedRegion = mapStateToRegion(stateVal, cityVal);
+        const descLower = rawDesc.toLowerCase();
 
         return {
             id: wo['spi:wonum'],
             title: cleanDesc,
             worktype: wo['spi:worktype'] || 'CM',
             ticketid: wo['spi:origrecordid'] || 'N/A',
-            customworktype: wo['spi:jobtype_description'] || 'O&M', 
+            customworktype: descLower.includes('maintenance') ? 'Maintenance' : 'Reactive', 
             ticketPriority: wo['spi:wopriority'] || 3,
             urgency: 3, 
             statusdate: wo['spi:statusdate'] || new Date().toISOString(),
@@ -186,28 +187,24 @@ export async function GET() {
         // ──────────────────────────────────────────────────────
         // PHASE 1: Three initial fetches in parallel (< 2s)
         // ──────────────────────────────────────────────────────
-        const [resSide, resSched, resSr] = await Promise.all([
+        const [resSide, resSched] = await Promise.all([
             safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=2000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`, headers),
-            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, headers),
-            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers)
+            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, headers)
         ]);
 
         const dataSide = await safeJson(resSide);
         const dataSched = await safeJson(resSched);
-        const dataSr = await safeJson(resSr);
 
         const allSide: any[] = dataSide?.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
         const allSched: any[] = dataSched?.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
-        const allSrs: any[] = dataSr?.['rdfs:member'] || dataSr?.member || [];
 
         // Extract resource lists
         const rtsResources = allSide.filter((a: any) => a.Attributes?.STATUS?.content === 'None');
         const scheduledResources = allSched.filter((a: any) => a.Attributes?.STATUS?.content !== 'None' && a.Attributes?.SCHEDSTART);
-        const uniqueSrs = [...new Set(allSrs.map((sr: any) => sr['spi:ticketid']).filter(Boolean))];
 
         // Collect ALL wonums we need details for (RTS + Scheduled) 
-        const rtsWonums = new Set(rtsResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean));
-        const schedWonums = new Set(scheduledResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean));
+        const rtsWonums = [...new Set(rtsResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean))];
+        const schedWonums = [...new Set(scheduledResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean))];
 
         // ──────────────────────────────────────────────────────
         // PHASE 2: Fetch WO details — ALL in one parallel blast
@@ -218,21 +215,9 @@ export async function GET() {
         // Build all chunk URL tasks as functions (not started yet)
         const allChunkFns: (() => Promise<any[]>)[] = [];
 
-        // Chunk tasks for RTS (by origrecordid from STAGE6 SRs)
-        for (let i = 0; i < uniqueSrs.length; i += 50) {
-            const chunk = uniqueSrs.slice(i, i + 50);
-            const srStr = chunk.map(w => `"${w}"`).join(',');
-            const whereClause = encodeURIComponent(`origrecordid in [${srStr}]`);
-            const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
-            allChunkFns.push(() =>
-                safeFetch(osUrl, headers).then(r => safeJson(r)).then(data => data ? (data['rdfs:member'] || data.member || []) : [])
-            );
-        }
-
-        // Chunk tasks for Scheduled WOs (by wonum directly)
-        const schedWonumArr = [...schedWonums];
-        for (let i = 0; i < schedWonumArr.length; i += 50) {
-            const chunk = schedWonumArr.slice(i, i + 50);
+        // Chunk tasks for RTS WOs (fetched directly by wonum)
+        for (let i = 0; i < rtsWonums.length; i += 200) {
+            const chunk = rtsWonums.slice(i, i + 200);
             const wonumStr = chunk.map(w => `"${w}"`).join(',');
             const whereClause = encodeURIComponent(`wonum in [${wonumStr}]`);
             const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
@@ -241,10 +226,21 @@ export async function GET() {
             );
         }
 
-        // Execute in controlled batches of 8 concurrent requests max
+        // Chunk tasks for Scheduled WOs (by wonum directly)
+        for (let i = 0; i < schedWonums.length; i += 200) {
+            const chunk = schedWonums.slice(i, i + 200);
+            const wonumStr = chunk.map(w => `"${w}"`).join(',');
+            const whereClause = encodeURIComponent(`wonum in [${wonumStr}]`);
+            const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
+            allChunkFns.push(() =>
+                safeFetch(osUrl, headers).then(r => safeJson(r)).then(data => data ? (data['rdfs:member'] || data.member || []) : [])
+            );
+        }
+
+        // Execute in controlled batches of 10 concurrent requests max
         const allChunkResults: any[][] = [];
-        for (let i = 0; i < allChunkFns.length; i += 8) {
-            const batch = allChunkFns.slice(i, i + 8).map(fn => fn());
+        for (let i = 0; i < allChunkFns.length; i += 10) {
+            const batch = allChunkFns.slice(i, i + 10).map(fn => fn());
             const batchResults = await Promise.all(batch);
             allChunkResults.push(...batchResults);
         }
