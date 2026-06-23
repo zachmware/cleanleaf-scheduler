@@ -187,16 +187,22 @@ export async function GET() {
         // ──────────────────────────────────────────────────────
         // PHASE 1: Three initial fetches in parallel (< 2s)
         // ──────────────────────────────────────────────────────
-        const [resSide, resSched] = await Promise.all([
+        const [resSide, resSched, resSr] = await Promise.all([
             safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=2000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`, headers),
-            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, headers)
+            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, headers),
+            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers)
         ]);
 
         const dataSide = await safeJson(resSide);
         const dataSched = await safeJson(resSched);
+        const dataSr = await safeJson(resSr);
 
         const allSide: any[] = dataSide?.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
         const allSched: any[] = dataSched?.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
+        const allSrs: any[] = dataSr?.['rdfs:member'] || dataSr?.member || [];
+
+        // Build set of STAGE6 SR ticket IDs for filtering
+        const stage6TicketIds = new Set(allSrs.map((sr: any) => String(sr['spi:ticketid'])).filter(Boolean));
 
         // Extract resource lists
         const rtsResources = allSide.filter((a: any) => a.Attributes?.STATUS?.content === 'None');
@@ -266,13 +272,24 @@ export async function GET() {
             clusterMap.set(loc, (clusterMap.get(loc) || 0) + 1);
         }
 
-        // Build RTS — one entry per WO, only NEWWO status
+        // Build RTS — one entry per WO, only NEWWO status, only STAGE6 cases
         const seenRtsWonums = new Set<string>();
         for (const res of rtsResources) {
             const wonum = res.Attributes?.WONUM?.content;
             if (wonum && finalValidWosMap.has(wonum) && !seenRtsWonums.has(wonum)) {
                 const wo = finalValidWosMap.get(wonum);
                 if (wo['spi:status'] === 'NEWWO') {
+                    // Parse case number from description: "[From Case 350625] ..." -> "350625"
+                    const rawDesc = wo['spi:description'] || '';
+                    const caseMatch = rawDesc.match(/\[From Case\s+(\d+)\]/i);
+                    const caseNum = caseMatch ? caseMatch[1] : null;
+                    
+                    // Only include if the case is in STAGE6, or if we can't determine the case number (benefit of doubt)
+                    if (caseNum && !stage6TicketIds.has(caseNum)) {
+                        seenRtsWonums.add(wonum);
+                        continue; // Skip — this case is NOT in STAGE6
+                    }
+                    
                     const processed = processRawRecords([wo], clusterMap, false, rtsResources);
                     if (processed.length > 0) finalRtsOrders.push(processed[0]);
                 }
