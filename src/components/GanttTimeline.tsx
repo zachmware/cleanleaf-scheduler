@@ -52,7 +52,7 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, trackIndex = 0, on
      fetch('/api/distance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin: origin, destination: `${order.projectAddress || order.projectName}, ${order.region}` })
+        body: JSON.stringify({ origin: origin, destination: order.projectAddress || order.projectName })
      })
      .then(res => res.json())
      .then(data => {
@@ -69,7 +69,7 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, trackIndex = 0, on
          fetch('/api/distance', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ origin: `${order.projectAddress || order.projectName}, ${order.region}`, destination: returnHome })
+            body: JSON.stringify({ origin: order.projectAddress || order.projectName, destination: returnHome })
          })
          .then(res => res.json())
          .then(data => {
