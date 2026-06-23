@@ -273,7 +273,7 @@ export default function SchedulerDashboard() {
 
         for (const bundle of regionBundles) {
             if (abortScheduling.current) break;
-            const destString = bundle[0].projectAddress || bundle[0].projectName;
+            const destString = bundle[0].projectAddress || bundle[0].projectName || '';
             const durationMins = bundle.reduce((sum, order) => sum + (order.durationHours * 60), 0);
             
             let bestTech = null;
@@ -312,7 +312,7 @@ export default function SchedulerDashboard() {
             let closestBundleIdx = 0;
             let minHomeDrive = 9999;
             for (let i = 0; i < bundles.length; i++) {
-                const dest = bundles[i][0].projectAddress || bundles[i][0].projectName;
+                const dest = bundles[i][0].projectAddress || bundles[i][0].projectName || '';
                 const d = await getCachedDistance(tech.homeAddress || 'Midwest', dest);
                 if (d < minHomeDrive) { minHomeDrive = d; closestBundleIdx = i; }
             }
@@ -321,19 +321,19 @@ export default function SchedulerDashboard() {
             let unassigned = bundles.filter((_, i) => i !== closestBundleIdx);
             
             let backwardsRoute = [closestBundle];
-            let currentLocation = closestBundle[0].projectAddress || closestBundle[0].projectName;
+            let currentLocation = closestBundle[0].projectAddress || closestBundle[0].projectName || '';
             
             // Build backwards route using Nearest Neighbor
             while (unassigned.length > 0) {
                 let nearestIdx = 0;
                 let nearestDist = 9999;
                 for (let i = 0; i < unassigned.length; i++) {
-                    const dest = unassigned[i][0].projectAddress || unassigned[i][0].projectName;
+                    const dest = unassigned[i][0].projectAddress || unassigned[i][0].projectName || '';
                     const d = await getCachedDistance(currentLocation, dest);
                     if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
                 }
                 backwardsRoute.push(unassigned[nearestIdx]);
-                currentLocation = unassigned[nearestIdx][0].projectAddress || unassigned[nearestIdx][0].projectName;
+                currentLocation = unassigned[nearestIdx][0].projectAddress || unassigned[nearestIdx][0].projectName || '';
                 unassigned.splice(nearestIdx, 1);
             }
             
@@ -344,7 +344,7 @@ export default function SchedulerDashboard() {
             let originString = techStartStates.get(tech.id)!.location;
             
             for (const bundle of finalRoute) {
-                const destString = bundle[0].projectAddress || bundle[0].projectName;
+                const destString = bundle[0].projectAddress || bundle[0].projectName || '';
                 const driveToTarget = await getCachedDistance(originString, destString);
                 const bundleTotalDurationMins = bundle.reduce((sum, order) => sum + (order.durationHours * 60), 0);
                 const driveHome = await getCachedDistance(destString, tech.homeAddress || 'Midwest');
