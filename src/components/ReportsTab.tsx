@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { WorkOrder, Technician } from '@/data/mockData';
+import * as XLSX from 'xlsx';
 
 export default function ReportsTab({ scheduledOrders, technicians }: { scheduledOrders: WorkOrder[], technicians: Technician[] }) {
   const [reportDayOffset, setReportDayOffset] = useState<number>(0); // 0 = today, 1 = tomorrow, etc.
@@ -81,6 +82,42 @@ export default function ReportsTab({ scheduledOrders, technicians }: { scheduled
 
   const activeFilterCount = (regionFilter !== 'ALL' ? 1 : 0) + (priorityFilter !== 'ALL' ? 1 : 0);
 
+  const exportToXlsx = useCallback(() => {
+    const rows = filteredOrders.map(order => ({
+      'Tech': techMap.get((order.assignedTechId || '').toLowerCase()) || order.assignedTechId || 'Unassigned',
+      'Start Time': formatTime(order.checkInTime || order.startTime),
+      'End Time': calculateEndTime(order.checkInTime || order.startTime, order.durationHours),
+      'Case Number': order.caseNumber || '',
+      'Project': order.projectName || '',
+      'Description': order.title || '',
+      'Priority': order.reportedPriorityText || `Score: ${order.priority}`,
+      'Region': order.region || '',
+      'Status': order.status || '',
+      'Duration (hrs)': order.durationHours || 0
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    
+    // Auto-size columns
+    const colWidths = Object.keys(rows[0] || {}).map(key => ({
+      wch: Math.max(key.length, ...rows.map(r => String((r as any)[key] || '').length)) + 2
+    }));
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    const dayLabel = reportDayOffset === 0 ? 'Today' : 'Tomorrow';
+    XLSX.utils.book_append_sheet(wb, ws, `Schedule ${dayLabel}`);
+
+    // Build filename with active filters
+    const dateLabel = targetDate.toISOString().split('T')[0];
+    const filterParts = [dateLabel];
+    if (regionFilter !== 'ALL') filterParts.push(regionFilter.replace(/\s/g, '-'));
+    if (priorityFilter !== 'ALL') filterParts.push(priorityFilter);
+    const filename = `Schedule_Report_${filterParts.join('_')}.xlsx`;
+
+    XLSX.writeFile(wb, filename);
+  }, [filteredOrders, techMap, reportDayOffset, targetDate, regionFilter, priorityFilter]);
+
   return (
     <div style={{ backgroundColor: 'var(--surface-color)', borderRadius: '12px', border: '1px solid var(--border-color)', height: 'calc(100vh - 120px)', padding: '24px', display: 'flex', flexDirection: 'column' }}>
        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -154,6 +191,25 @@ export default function ReportsTab({ scheduledOrders, technicians }: { scheduled
           <span style={{ marginLeft: 'auto', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
             Showing {filteredOrders.length} of {dailyOrders.length} appointments
           </span>
+
+          <button
+            onClick={exportToXlsx}
+            disabled={filteredOrders.length === 0}
+            style={{
+              padding: '6px 16px',
+              borderRadius: '6px',
+              border: '1px solid var(--primary)',
+              background: filteredOrders.length === 0 ? 'transparent' : 'var(--primary)',
+              color: filteredOrders.length === 0 ? 'var(--text-muted)' : '#fff',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: filteredOrders.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: filteredOrders.length === 0 ? 0.5 : 1,
+              whiteSpace: 'nowrap'
+            }}
+          >
+            ⬇ Export XLSX
+          </button>
        </div>
 
        <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
