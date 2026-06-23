@@ -11,11 +11,22 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
         const rawDesc = wo['spi:description'] || `Work Order ${wo['spi:wonum']}`;
         const cleanDesc = rawDesc.replace(/\[.*?\]/g, '').trim();
         const stateVal = (addr['spi:stateprovince'] || addr['spi:stateprovince_description'] || '').toUpperCase();
+        const cityVal = (addr['spi:city'] || '').toUpperCase();
         let mappedRegion = 'Midwest';
-        if (['NC', 'VA', 'MD', 'PA', 'GA', 'SC', 'NORTH CAROLINA', 'GEORGIA', 'VIRGINIA', 'SOUTH CAROLINA'].includes(stateVal)) mappedRegion = 'Mid-Atlantic';
-        else if (['NY', 'NJ', 'MA', 'CT', 'NEW YORK', 'NEW JERSEY'].includes(stateVal)) mappedRegion = 'Northeast';
-        else if (['CA', 'NV', 'OR', 'WA', 'CALIFORNIA', 'ARIZONA', 'AZ'].includes(stateVal)) mappedRegion = 'West';
-        else if (['TX', 'FL', 'AL', 'LA', 'TEXAS', 'FLORIDA'].includes(stateVal)) mappedRegion = 'South';
+        // Mid Atlantic: NC, VA, MD, PA, SC, DC
+        if (['NC', 'VA', 'MD', 'PA', 'SC', 'DC', 'NORTH CAROLINA', 'VIRGINIA', 'MARYLAND', 'PENNSYLVANIA', 'SOUTH CAROLINA'].includes(stateVal)) mappedRegion = 'Mid Atlantic';
+        // New England: MA, CT, RI, NH, VT, ME, NY, NJ
+        else if (['MA', 'CT', 'RI', 'NH', 'VT', 'ME', 'NY', 'NJ', 'MASSACHUSETTS', 'CONNECTICUT', 'RHODE ISLAND', 'NEW HAMPSHIRE', 'VERMONT', 'MAINE', 'NEW YORK', 'NEW JERSEY'].includes(stateVal)) mappedRegion = 'New England';
+        // Nor Cal: Northern California cities
+        else if (stateVal === 'CA' || stateVal === 'CALIFORNIA') {
+            const norCalCities = ['SAN FRANCISCO', 'SOUTH SAN FRANCISCO', 'OAKLAND', 'SAN JOSE', 'SACRAMENTO', 'FREMONT', 'STOCKTON', 'MODESTO', 'SANTA ROSA', 'HAYWARD', 'SUNNYVALE', 'CONCORD', 'ROSEVILLE', 'VISALIA', 'SANTA CLARA', 'VALLEJO', 'BERKELEY', 'RICHMOND', 'ANTIOCH', 'TULARE', 'FRESNO', 'REDDING', 'CHICO', 'NAPA', 'MERCED', 'MANTECA', 'LODI', 'TURLOCK', 'GILROY', 'MADERA', 'WOODLAND', 'HANFORD', 'PORTERVILLE', 'LEMOORE', 'CERES', 'HOLLISTER', 'LOS BANOS', 'WATSONVILLE', 'SALINAS', 'MONTEREY', 'SANTA CRUZ', 'HALF MOON BAY', 'DALY CITY', 'SAN MATEO', 'REDWOOD CITY', 'PALO ALTO', 'MOUNTAIN VIEW', 'MILPITAS', 'PLEASANTON', 'LIVERMORE', 'DUBLIN', 'SAN RAMON', 'WALNUT CREEK', 'DANVILLE', 'MARTINEZ', 'PITTSBURG', 'BRENTWOOD', 'TRACY', 'PATTERSON'];
+            // Check if city is in NorCal list, or if latitude would be >= ~36 (rough: Fresno line)
+            mappedRegion = norCalCities.some(c => cityVal.includes(c)) ? 'Nor Cal' : 'So Cal';
+        }
+        // Southeast: GA, FL, AL, TN, LA, MS
+        else if (['GA', 'FL', 'AL', 'TN', 'LA', 'MS', 'GEORGIA', 'FLORIDA', 'ALABAMA', 'TENNESSEE', 'LOUISIANA', 'MISSISSIPPI'].includes(stateVal)) mappedRegion = 'Southeast';
+        // TX goes to Midwest for now (or could be its own)
+        else if (['TX', 'TEXAS'].includes(stateVal)) mappedRegion = 'Midwest';
 
         return {
             id: wo['spi:wonum'],
@@ -242,31 +253,71 @@ export async function GET() {
              if (loc !== 'UNKNOWN') uniqueLocations.add(loc);
         });
 
-        // Build RTS
+        // Build RTS — deduplicate by wonum (one entry per WO regardless of how many AR records exist)
+        const seenRtsWonums = new Set<string>();
         for (const res of rtsResources) {
             const wonum = res.Attributes?.WONUM?.content;
-            if (wonum && finalValidWosMap.has(wonum)) {
+            if (wonum && finalValidWosMap.has(wonum) && !seenRtsWonums.has(wonum)) {
                 const wo = finalValidWosMap.get(wonum);
                 if (wo['spi:status'] === 'NEWWO') {
                     const processed = processRawRecords([wo], clusterMap, false, rtsResources);
                     if (processed.length > 0) finalRtsOrders.push(processed[0]);
                 }
-                finalValidWosMap.delete(wonum); // prevent dups
+                seenRtsWonums.add(wonum);
             }
         }
 
-        const finalValidWosMapSched = new Map();
-        for (const wo of woDetails) {
-            finalValidWosMapSched.set(wo['spi:wonum'], wo);
-        }
-
+        // 6. Fetch WO details for scheduled items that aren't in the STAGE6 pipeline
+        // (Scheduled WOs typically have status DAPPR/INPROG/COMP and their SRs are STAGE7+)
+        const missingSchedWonums: string[] = [];
         for (const res of scheduledResources) {
             const wonum = res.Attributes?.WONUM?.content;
-            if (wonum && finalValidWosMapSched.has(wonum)) {
-                const wo = finalValidWosMapSched.get(wonum);
-                const processed = processRawRecords([wo], clusterMap, true, scheduledResources);
-                if (processed.length > 0) finalSchedOrders.push(processed[0]);
-                finalValidWosMapSched.delete(wonum);
+            if (wonum && !finalValidWosMap.has(wonum)) {
+                missingSchedWonums.push(wonum);
+            }
+        }
+        const uniqueMissingWonums = [...new Set(missingSchedWonums)];
+        
+        if (uniqueMissingWonums.length > 0) {
+            console.log(`Fetching ${uniqueMissingWonums.length} missing scheduled WO details...`);
+            const schedChunkTasks = [];
+            for (let i = 0; i < uniqueMissingWonums.length; i += 40) {
+                const chunk = uniqueMissingWonums.slice(i, i + 40);
+                const wonumStr = chunk.map(w => `"${w}"`).join(',');
+                const whereClause = encodeURIComponent(`wonum in [${wonumStr}]`);
+                const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
+                schedChunkTasks.push(() =>
+                    fetch(osUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
+                        .then(r => r.ok ? r.json() : null)
+                        .then(data => data ? (data['rdfs:member'] || data.member || []) : [])
+                        .catch(() => [])
+                );
+            }
+            const schedChunkResults = await executeInBatches(schedChunkTasks, 5);
+            for (const res of schedChunkResults) {
+                for (const wo of res) {
+                    finalValidWosMap.set(wo['spi:wonum'], wo);
+                }
+            }
+            console.log(`Total WOs in map after scheduled fetch: ${finalValidWosMap.size}`);
+        }
+
+        // Build Scheduled — allow one entry per (wonum + techId) pair so multi-tech assignments both appear
+        const seenSchedKeys = new Set<string>();
+        for (const res of scheduledResources) {
+            const wonum = res.Attributes?.WONUM?.content;
+            const techId = res.Attributes?.PERSONID?.content || 'UNKNOWN';
+            const dedupKey = `${wonum}_${techId}`;
+            if (wonum && finalValidWosMap.has(wonum) && !seenSchedKeys.has(dedupKey)) {
+                const wo = finalValidWosMap.get(wonum);
+                // Pass only this specific resource as the assignment so it picks up the correct tech/time
+                const processed = processRawRecords([wo], clusterMap, true, [res]);
+                if (processed.length > 0) {
+                    // Make the ID unique per tech assignment
+                    processed[0].id = `${wonum}_${techId}`;
+                    finalSchedOrders.push(processed[0]);
+                }
+                seenSchedKeys.add(dedupKey);
             }
         }
 

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 
 export const revalidate = 0; // Disable cache so Maximo updates are instant
-export const maxDuration = 60; // Allow Vercel Hobby serverless to run up to 60s
 
 export async function GET() {
     try {

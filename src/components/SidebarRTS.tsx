@@ -74,8 +74,9 @@ export default function SidebarRTS({ orders }: { orders: WorkOrder[] }) {
   const uniqueRegions = Array.from(new Set(orders.map(o => o.region)));
   const uniqueTypes = Array.from(new Set(orders.map(o => o.caseType))).filter(Boolean);
 
-  // Sorting strictly preserved: Mathematical Dynamic Priority Sort is native in backend arrays
-  const filteredOrders = orders.filter(o => {
+  // Sort by scheduling score (highest first) then filter
+  const sortedOrders = [...orders].sort((a, b) => b.priority - a.priority);
+  const filteredOrders = sortedOrders.filter(o => {
       // Free Text Search against Case/Subject
       const searchMatch = !searchQ || 
                o.title.toLowerCase().includes(searchQ.toLowerCase()) || 
