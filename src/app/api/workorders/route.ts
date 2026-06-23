@@ -2,6 +2,25 @@ import { NextResponse } from 'next/server';
 
 export const revalidate = 0; // Disable cache so Maximo updates are instant
 
+function mapStateToRegion(stateVal: string, cityVal: string): string {
+    const s = stateVal.toUpperCase();
+    const c = cityVal.toUpperCase();
+    
+    // Mid Atlantic: NC, VA, MD, PA, SC, DC
+    if (['NC', 'VA', 'MD', 'PA', 'SC', 'DC', 'NORTH CAROLINA', 'VIRGINIA', 'MARYLAND', 'PENNSYLVANIA', 'SOUTH CAROLINA'].includes(s)) return 'Mid Atlantic';
+    // New England: MA, CT, RI, NH, VT, ME, NY, NJ
+    if (['MA', 'CT', 'RI', 'NH', 'VT', 'ME', 'NY', 'NJ', 'MASSACHUSETTS', 'CONNECTICUT', 'RHODE ISLAND', 'NEW HAMPSHIRE', 'VERMONT', 'MAINE', 'NEW YORK', 'NEW JERSEY'].includes(s)) return 'New England';
+    // California split
+    if (s === 'CA' || s === 'CALIFORNIA') {
+        const norCalCities = ['SAN FRANCISCO', 'SOUTH SAN FRANCISCO', 'OAKLAND', 'SAN JOSE', 'SACRAMENTO', 'FREMONT', 'STOCKTON', 'MODESTO', 'SANTA ROSA', 'HAYWARD', 'SUNNYVALE', 'CONCORD', 'ROSEVILLE', 'VISALIA', 'SANTA CLARA', 'VALLEJO', 'BERKELEY', 'RICHMOND', 'ANTIOCH', 'TULARE', 'FRESNO', 'REDDING', 'CHICO', 'NAPA', 'MERCED', 'MANTECA', 'LODI', 'TURLOCK', 'GILROY', 'MADERA', 'WOODLAND', 'HANFORD', 'PORTERVILLE', 'LEMOORE', 'CERES', 'HOLLISTER', 'LOS BANOS', 'WATSONVILLE', 'SALINAS', 'MONTEREY', 'SANTA CRUZ', 'HALF MOON BAY', 'DALY CITY', 'SAN MATEO', 'REDWOOD CITY', 'PALO ALTO', 'MOUNTAIN VIEW', 'MILPITAS', 'PLEASANTON', 'LIVERMORE', 'DUBLIN', 'SAN RAMON', 'WALNUT CREEK', 'DANVILLE', 'MARTINEZ', 'PITTSBURG', 'BRENTWOOD', 'TRACY', 'PATTERSON'];
+        return norCalCities.some(nc => c.includes(nc)) ? 'Nor Cal' : 'So Cal';
+    }
+    // Southeast: GA, FL, AL, TN, LA, MS
+    if (['GA', 'FL', 'AL', 'TN', 'LA', 'MS', 'GEORGIA', 'FLORIDA', 'ALABAMA', 'TENNESSEE', 'LOUISIANA', 'MISSISSIPPI'].includes(s)) return 'Southeast';
+    
+    return 'Midwest';
+}
+
 function processRawRecords(members: any[], clusterMap: Map<string, number>, isScheduled: boolean, assignments?: any[]) {
     const rawRecords = members.map((wo: any) => {
         const addr = (wo['spi:woserviceaddress'] && wo['spi:woserviceaddress'][0]) || {};
@@ -10,23 +29,9 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
         
         const rawDesc = wo['spi:description'] || `Work Order ${wo['spi:wonum']}`;
         const cleanDesc = rawDesc.replace(/\[.*?\]/g, '').trim();
-        const stateVal = (addr['spi:stateprovince'] || addr['spi:stateprovince_description'] || '').toUpperCase();
-        const cityVal = (addr['spi:city'] || '').toUpperCase();
-        let mappedRegion = 'Midwest';
-        // Mid Atlantic: NC, VA, MD, PA, SC, DC
-        if (['NC', 'VA', 'MD', 'PA', 'SC', 'DC', 'NORTH CAROLINA', 'VIRGINIA', 'MARYLAND', 'PENNSYLVANIA', 'SOUTH CAROLINA'].includes(stateVal)) mappedRegion = 'Mid Atlantic';
-        // New England: MA, CT, RI, NH, VT, ME, NY, NJ
-        else if (['MA', 'CT', 'RI', 'NH', 'VT', 'ME', 'NY', 'NJ', 'MASSACHUSETTS', 'CONNECTICUT', 'RHODE ISLAND', 'NEW HAMPSHIRE', 'VERMONT', 'MAINE', 'NEW YORK', 'NEW JERSEY'].includes(stateVal)) mappedRegion = 'New England';
-        // Nor Cal: Northern California cities
-        else if (stateVal === 'CA' || stateVal === 'CALIFORNIA') {
-            const norCalCities = ['SAN FRANCISCO', 'SOUTH SAN FRANCISCO', 'OAKLAND', 'SAN JOSE', 'SACRAMENTO', 'FREMONT', 'STOCKTON', 'MODESTO', 'SANTA ROSA', 'HAYWARD', 'SUNNYVALE', 'CONCORD', 'ROSEVILLE', 'VISALIA', 'SANTA CLARA', 'VALLEJO', 'BERKELEY', 'RICHMOND', 'ANTIOCH', 'TULARE', 'FRESNO', 'REDDING', 'CHICO', 'NAPA', 'MERCED', 'MANTECA', 'LODI', 'TURLOCK', 'GILROY', 'MADERA', 'WOODLAND', 'HANFORD', 'PORTERVILLE', 'LEMOORE', 'CERES', 'HOLLISTER', 'LOS BANOS', 'WATSONVILLE', 'SALINAS', 'MONTEREY', 'SANTA CRUZ', 'HALF MOON BAY', 'DALY CITY', 'SAN MATEO', 'REDWOOD CITY', 'PALO ALTO', 'MOUNTAIN VIEW', 'MILPITAS', 'PLEASANTON', 'LIVERMORE', 'DUBLIN', 'SAN RAMON', 'WALNUT CREEK', 'DANVILLE', 'MARTINEZ', 'PITTSBURG', 'BRENTWOOD', 'TRACY', 'PATTERSON'];
-            // Check if city is in NorCal list, or if latitude would be >= ~36 (rough: Fresno line)
-            mappedRegion = norCalCities.some(c => cityVal.includes(c)) ? 'Nor Cal' : 'So Cal';
-        }
-        // Southeast: GA, FL, AL, TN, LA, MS
-        else if (['GA', 'FL', 'AL', 'TN', 'LA', 'MS', 'GEORGIA', 'FLORIDA', 'ALABAMA', 'TENNESSEE', 'LOUISIANA', 'MISSISSIPPI'].includes(stateVal)) mappedRegion = 'Southeast';
-        // TX goes to Midwest for now (or could be its own)
-        else if (['TX', 'TEXAS'].includes(stateVal)) mappedRegion = 'Midwest';
+        const stateVal = addr['spi:stateprovince'] || addr['spi:stateprovince_description'] || '';
+        const cityVal = addr['spi:city'] || '';
+        const mappedRegion = mapStateToRegion(stateVal, cityVal);
 
         return {
             id: wo['spi:wonum'],
@@ -100,7 +105,6 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
         let startTime = undefined;
 
         if (isScheduled && assignments) {
-            // assignments is an array of MBO records: a.Attributes.WONUM.content
             const assignment = assignments.find((a: any) => a.Attributes?.WONUM?.content === row.id);
             if (assignment) {
                 finalStatus = assignment.Attributes?.STATUS?.content || 'Scheduled';
@@ -145,6 +149,25 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
     return mappedOrders.map(({ _isAbsoluteEmergency, ...rest }: any) => rest);
 }
 
+// Safe fetch wrapper — never throws, returns null on failure
+async function safeFetch(url: string, headers: Record<string, string>, timeoutMs = 12000): Promise<Response | null> {
+    try {
+        return await fetch(url, { method: 'GET', headers, signal: AbortSignal.timeout(timeoutMs) });
+    } catch {
+        return null;
+    }
+}
+
+// Safe JSON parse from a fetch response
+async function safeJson(res: Response | null): Promise<any> {
+    if (!res || !res.ok) return null;
+    try {
+        return await res.json();
+    } catch {
+        return null;
+    }
+}
+
 export async function GET() {
     try {
         const username = process.env.MAXIMO_USER;
@@ -154,106 +177,95 @@ export async function GET() {
         }
 
         const encodedAuth = Buffer.from(`${username}:${password}`).toString('base64');
-        const headers = {
+        const headers: Record<string, string> = {
             'Content-Type': 'application/json',
             'maxauth': encodedAuth,
             'x-public-uri': 'https://cleanleafmax.softwrench2.com/maximo/oslc'
         };
-        
-        // Helper to batch execute promises so we don't DDOS Maximo
-        const executeInBatches = async (tasks: (() => Promise<any>)[], batchSize = 5) => {
-             let results: any[] = [];
-             for (let i = 0; i < tasks.length; i += batchSize) {
-                 const batch = tasks.slice(i, i + batchSize);
-                 const batchResults = await Promise.all(batch.map(t => t()));
-                 results = results.concat(batchResults);
-             }
-             return results;
-        };
 
-        // 1. Fetch side resources, scheduled resources, and STAGE6 SRs concurrently
-        const s0 = Date.now();
-        console.log("Starting fetch 1...");
+        // ──────────────────────────────────────────────────────
+        // PHASE 1: Three initial fetches in parallel (< 2s)
+        // ──────────────────────────────────────────────────────
         const [resSide, resSched, resSr] = await Promise.all([
-            fetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=2000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) }),
-            fetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) }),
-            fetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
+            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=2000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`, headers),
+            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, headers),
+            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers)
         ]);
-        console.log(`Fetch 1 complete in ${Date.now() - s0}ms`);
 
-        let allSide: any[] = [];
-        let allSched: any[] = [];
-        let allSrs: any[] = [];
+        const dataSide = await safeJson(resSide);
+        const dataSched = await safeJson(resSched);
+        const dataSr = await safeJson(resSr);
 
-        if (resSide.ok) {
-            const dataSide = await resSide.json();
-            allSide = dataSide.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
-        }
-        if (resSched.ok) {
-            const dataSched = await resSched.json();
-            allSched = dataSched.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
-        }
-        if (resSr.ok) {
-            const dataSr = await resSr.json();
-            allSrs = dataSr['rdfs:member'] || dataSr.member || [];
-        }
+        const allSide: any[] = dataSide?.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
+        const allSched: any[] = dataSched?.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
+        const allSrs: any[] = dataSr?.['rdfs:member'] || dataSr?.member || [];
 
-        // 2. Extract WONUMs
-        const rtsResources = allSide.filter((a: any) => a.Attributes?.STATUS && a.Attributes.STATUS.content === 'None');
-        const scheduledResources = allSched.filter((a: any) => a.Attributes?.STATUS && a.Attributes.STATUS.content !== 'None' && a.Attributes.SCHEDSTART);
+        // Extract resource lists
+        const rtsResources = allSide.filter((a: any) => a.Attributes?.STATUS?.content === 'None');
+        const scheduledResources = allSched.filter((a: any) => a.Attributes?.STATUS?.content !== 'None' && a.Attributes?.SCHEDSTART);
+        const uniqueSrs = [...new Set(allSrs.map((sr: any) => sr['spi:ticketid']).filter(Boolean))];
 
-        // 3. Extract unique STAGE6 SRs
-        const uniqueSrs = Array.from(new Set(allSrs.map(sr => sr['spi:ticketid']).filter(Boolean)));
+        // Collect ALL wonums we need details for (RTS + Scheduled) 
+        const rtsWonums = new Set(rtsResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean));
+        const schedWonums = new Set(scheduledResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean));
 
-        // 4. Fetch WO Details for those SRs where WO status is NEWWO
+        // ──────────────────────────────────────────────────────
+        // PHASE 2: Fetch WO details — ALL in one parallel blast
+        // Build two sets of chunk tasks and fire them all at once
+        // ──────────────────────────────────────────────────────
         const selectParams = 'wonum,status,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode},locations{region}';
-        let woDetails: any[] = [];
         
-        console.log(`Unique STAGE6 SRs: ${uniqueSrs.length}`);
-        const s1 = Date.now();
-        if (uniqueSrs.length > 0) {
-            const chunkTasks = [];
-            // Batch them in chunks of 150 SRs
-            for (let i = 0; i < uniqueSrs.length; i += 40) {
-                const chunk = uniqueSrs.slice(i, i + 40);
-                const srStr = chunk.map(w => `"${w}"`).join(',');
-                const whereClause = encodeURIComponent(`origrecordid in [${srStr}]`);
-                const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
-                chunkTasks.push(() =>
-                    fetch(osUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
-                        .then(r => r.ok ? r.json() : null)
-                        .then(data => data ? (data['rdfs:member'] || data.member || []) : [])
-                );
-            }
-            
-            // Execute in larger concurrent batches for speed
-            const chunkResults = await executeInBatches(chunkTasks, 5);
-            for (const res of chunkResults) {
-                woDetails = woDetails.concat(res);
-            }
-        }
-        console.log(`Fetch WOs complete in ${Date.now() - s1}ms. Found ${woDetails.length}`);
+        const allChunkTasks: Promise<any[]>[] = [];
 
-        // Filter woDetails by RTS/Sched WONUMs and process
-        const finalValidWosMap = new Map();
-        for (const wo of woDetails) {
-            finalValidWosMap.set(wo['spi:wonum'], wo);
+        // Chunk tasks for RTS (by origrecordid from STAGE6 SRs)
+        for (let i = 0; i < uniqueSrs.length; i += 50) {
+            const chunk = uniqueSrs.slice(i, i + 50);
+            const srStr = chunk.map(w => `"${w}"`).join(',');
+            const whereClause = encodeURIComponent(`origrecordid in [${srStr}]`);
+            const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
+            allChunkTasks.push(
+                safeFetch(osUrl, headers).then(r => safeJson(r)).then(data => data ? (data['rdfs:member'] || data.member || []) : [])
+            );
         }
 
-        // 5. Process records
+        // Chunk tasks for Scheduled WOs (by wonum directly)
+        // We fetch ALL scheduled wonums since they may have SR status != STAGE6
+        const schedWonumArr = [...schedWonums];
+        for (let i = 0; i < schedWonumArr.length; i += 50) {
+            const chunk = schedWonumArr.slice(i, i + 50);
+            const wonumStr = chunk.map(w => `"${w}"`).join(',');
+            const whereClause = encodeURIComponent(`wonum in [${wonumStr}]`);
+            const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
+            allChunkTasks.push(
+                safeFetch(osUrl, headers).then(r => safeJson(r)).then(data => data ? (data['rdfs:member'] || data.member || []) : [])
+            );
+        }
+
+        // Fire ALL chunk tasks at once (Maximo can handle ~20 concurrent requests)
+        const allChunkResults = await Promise.all(allChunkTasks);
+        
+        // Merge all results into a single WO map
+        const finalValidWosMap = new Map<string, any>();
+        for (const chunk of allChunkResults) {
+            for (const wo of chunk) {
+                if (wo['spi:wonum']) finalValidWosMap.set(wo['spi:wonum'], wo);
+            }
+        }
+
+        // ──────────────────────────────────────────────────────
+        // PHASE 3: Process into RTS + Scheduled output
+        // ──────────────────────────────────────────────────────
         let finalRtsOrders: any[] = [];
         let finalSchedOrders: any[] = [];
 
-        // Cluster Map
+        // Cluster Map for scoring
         const clusterMap = new Map<string, number>();
-        const uniqueLocations = new Set<string>();
-        woDetails.forEach((wo: any) => {
-             const loc = wo['spi:location'] || 'UNKNOWN';
-             clusterMap.set(loc, (clusterMap.get(loc) || 0) + 1);
-             if (loc !== 'UNKNOWN') uniqueLocations.add(loc);
-        });
+        for (const wo of finalValidWosMap.values()) {
+            const loc = wo['spi:location'] || 'UNKNOWN';
+            clusterMap.set(loc, (clusterMap.get(loc) || 0) + 1);
+        }
 
-        // Build RTS — deduplicate by wonum (one entry per WO regardless of how many AR records exist)
+        // Build RTS — one entry per WO, only NEWWO status
         const seenRtsWonums = new Set<string>();
         for (const res of rtsResources) {
             const wonum = res.Attributes?.WONUM?.content;
@@ -267,42 +279,7 @@ export async function GET() {
             }
         }
 
-        // 6. Fetch WO details for scheduled items that aren't in the STAGE6 pipeline
-        // (Scheduled WOs typically have status DAPPR/INPROG/COMP and their SRs are STAGE7+)
-        const missingSchedWonums: string[] = [];
-        for (const res of scheduledResources) {
-            const wonum = res.Attributes?.WONUM?.content;
-            if (wonum && !finalValidWosMap.has(wonum)) {
-                missingSchedWonums.push(wonum);
-            }
-        }
-        const uniqueMissingWonums = [...new Set(missingSchedWonums)];
-        
-        if (uniqueMissingWonums.length > 0) {
-            console.log(`Fetching ${uniqueMissingWonums.length} missing scheduled WO details...`);
-            const schedChunkTasks = [];
-            for (let i = 0; i < uniqueMissingWonums.length; i += 40) {
-                const chunk = uniqueMissingWonums.slice(i, i + 40);
-                const wonumStr = chunk.map(w => `"${w}"`).join(',');
-                const whereClause = encodeURIComponent(`wonum in [${wonumStr}]`);
-                const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
-                schedChunkTasks.push(() =>
-                    fetch(osUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) })
-                        .then(r => r.ok ? r.json() : null)
-                        .then(data => data ? (data['rdfs:member'] || data.member || []) : [])
-                        .catch(() => [])
-                );
-            }
-            const schedChunkResults = await executeInBatches(schedChunkTasks, 5);
-            for (const res of schedChunkResults) {
-                for (const wo of res) {
-                    finalValidWosMap.set(wo['spi:wonum'], wo);
-                }
-            }
-            console.log(`Total WOs in map after scheduled fetch: ${finalValidWosMap.size}`);
-        }
-
-        // Build Scheduled — allow one entry per (wonum + techId) pair so multi-tech assignments both appear
+        // Build Scheduled — one entry per (wonum + techId) pair
         const seenSchedKeys = new Set<string>();
         for (const res of scheduledResources) {
             const wonum = res.Attributes?.WONUM?.content;
@@ -310,18 +287,14 @@ export async function GET() {
             const dedupKey = `${wonum}_${techId}`;
             if (wonum && finalValidWosMap.has(wonum) && !seenSchedKeys.has(dedupKey)) {
                 const wo = finalValidWosMap.get(wonum);
-                // Pass only this specific resource as the assignment so it picks up the correct tech/time
                 const processed = processRawRecords([wo], clusterMap, true, [res]);
                 if (processed.length > 0) {
-                    // Make the ID unique per tech assignment
                     processed[0].id = `${wonum}_${techId}`;
                     finalSchedOrders.push(processed[0]);
                 }
                 seenSchedKeys.add(dedupKey);
             }
         }
-
-        // Region is automatically resolved via processRawRecords using fallback logic.
 
         return NextResponse.json({
             rtsOrders: finalRtsOrders,
@@ -333,6 +306,7 @@ export async function GET() {
         });
 
     } catch (err: any) {
+        console.error('Workorder API Error:', err);
         return NextResponse.json({ error: 'Database connection failed', details: err.message }, { status: 500 });
     }
 }

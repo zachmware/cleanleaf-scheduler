@@ -17,7 +17,11 @@ export default function SchedulerDashboard() {
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [isScheduling, setIsScheduling] = useState<boolean>(false);
   const [scheduleProgress, setScheduleProgress] = useState({ current: 0, total: 0, title: '' });
-  const [targetDateStr, setTargetDateStr] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [targetDateStr, setTargetDateStr] = useState<string>(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  });
   const [isLoadingDB, setIsLoadingDB] = useState<boolean>(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
