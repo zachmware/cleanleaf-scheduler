@@ -5,6 +5,7 @@ export interface WorkOrder {
   priority: number; // 1 to 5
   durationHours: number; // For simplicity in the Gantt, duration is blocks of hours
   region: string; // The territory this job is in
+  location: string; // Maximo location code (e.g. "820-0292")
   status: string;
   assignedTechId?: string;
   startTime?: string; // ISO string representing scheduled startTime 
@@ -16,6 +17,7 @@ export interface WorkOrder {
   projectAddress?: string;
   reportedPriorityText?: string;
   _isAbsoluteEmergency?: boolean;
+  bundleOnly?: boolean; // STAGE6B: only schedule when paired with STAGE6 at same location
 }
 
 export interface Technician {

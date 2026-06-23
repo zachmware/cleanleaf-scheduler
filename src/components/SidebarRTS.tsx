@@ -48,7 +48,12 @@ function DraggableWorkOrder({ order }: { order: WorkOrder }) {
             </div>
 
             <div style={{ fontSize: '0.75rem', marginTop: '8px', opacity: 0.7, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Case: #{order.caseNumber} • {order.durationHours}hr</span>
+              <span>
+                Case: #{order.caseNumber} • {order.durationHours}hr
+                {order.bundleOnly && (
+                  <span style={{ marginLeft: '6px', padding: '1px 6px', borderRadius: '4px', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.5px' }}>BUNDLE</span>
+                )}
+              </span>
               <span style={{ fontWeight: 700, color: 'var(--primary)', opacity: 1, paddingRight: '8px' }}>
                  Score: {order.priority}
               </span>

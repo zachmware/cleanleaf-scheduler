@@ -129,6 +129,7 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
             priority: finalDynamicScore, 
             durationHours: strictDuration, 
             region: row.explicitRegion || 'Midwest', 
+            location: row.location || 'UNKNOWN',
             status: finalStatus,
             _isAbsoluteEmergency: baseScore === 100,
             caseNumber: row.ticketid || 'Unknown',
@@ -136,6 +137,7 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
             projectName: row.projectName || 'Unknown',
             projectAddress: trueServiceAddress, 
             reportedPriorityText: pText,
+            bundleOnly: false,
             assignedTechId,
             startTime
         };
@@ -203,6 +205,12 @@ export async function GET() {
 
         // Build set of STAGE6 SR ticket IDs for filtering
         const stage6TicketIds = new Set(allSrs.map((sr: any) => String(sr['spi:ticketid'])).filter(Boolean));
+
+        // Also fetch STAGE6B SRs (ready to bundle)
+        const resS6b = await safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6B"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers);
+        const dataS6b = await safeJson(resS6b);
+        const allS6b: any[] = dataS6b?.['rdfs:member'] || dataS6b?.member || [];
+        const stage6bTicketIds = new Set(allS6b.map((sr: any) => String(sr['spi:ticketid'])).filter(Boolean));
 
         // Extract resource lists
         const rtsResources = allSide.filter((a: any) => a.Attributes?.STATUS?.content === 'None');
@@ -274,26 +282,51 @@ export async function GET() {
 
         // Build RTS — one entry per WO, only NEWWO status, only STAGE6 cases
         const seenRtsWonums = new Set<string>();
+        const stage6Locations = new Set<string>(); // Track locations with STAGE6 cases
+        const stage6bCandidates: any[] = []; // Hold STAGE6B WOs for later filtering
+        
         for (const res of rtsResources) {
             const wonum = res.Attributes?.WONUM?.content;
             if (wonum && finalValidWosMap.has(wonum) && !seenRtsWonums.has(wonum)) {
                 const wo = finalValidWosMap.get(wonum);
                 if (wo['spi:status'] === 'NEWWO') {
-                    // Parse case number from description: "[From Case 350625] ..." -> "350625"
                     const rawDesc = wo['spi:description'] || '';
                     const caseMatch = rawDesc.match(/\[From Case\s+(\d+)\]/i);
                     const caseNum = caseMatch ? caseMatch[1] : null;
                     
-                    // Only include if the case is in STAGE6, or if we can't determine the case number (benefit of doubt)
+                    // Check if this is a STAGE6B case — save for later
+                    if (caseNum && stage6bTicketIds.has(caseNum)) {
+                        stage6bCandidates.push(wo);
+                        seenRtsWonums.add(wonum);
+                        continue;
+                    }
+                    
+                    // Only include STAGE6 cases (or unknown)
                     if (caseNum && !stage6TicketIds.has(caseNum)) {
                         seenRtsWonums.add(wonum);
-                        continue; // Skip — this case is NOT in STAGE6
+                        continue;
                     }
                     
                     const processed = processRawRecords([wo], clusterMap, false, rtsResources);
-                    if (processed.length > 0) finalRtsOrders.push(processed[0]);
+                    if (processed.length > 0) {
+                        finalRtsOrders.push(processed[0]);
+                        stage6Locations.add(wo['spi:location'] || 'UNKNOWN');
+                    }
                 }
                 seenRtsWonums.add(wonum);
+            }
+        }
+        
+        // Now add STAGE6B cases that share a location with a STAGE6 case
+        for (const wo of stage6bCandidates) {
+            const loc = wo['spi:location'] || 'UNKNOWN';
+            if (stage6Locations.has(loc)) {
+                const processed = processRawRecords([wo], clusterMap, false, rtsResources);
+                if (processed.length > 0) {
+                    processed[0].bundleOnly = true;
+                    processed[0].caseType = (processed[0].caseType || '') + ' (Bundle)';
+                    finalRtsOrders.push(processed[0]);
+                }
             }
         }
 

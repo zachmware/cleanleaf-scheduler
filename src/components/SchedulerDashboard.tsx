@@ -364,6 +364,29 @@ export default function SchedulerDashboard() {
                         });
                         proposedCheckIn.setTime(proposedCheckIn.getTime() + (order.durationHours * 60000 * 60));
                     }
+                    
+                    // STAGE6B Bundle: schedule any bundleOnly cases at this same location back-to-back
+                    const bundleLocation = bundle[0].location;
+                    if (bundleLocation && bundleLocation !== 'UNKNOWN') {
+                        const bundleCases = remainingRts.filter(o => 
+                            o.bundleOnly && o.location === bundleLocation && !scheduled.some(s => s.id === o.id)
+                        );
+                        for (const bCase of bundleCases) {
+                            const bEnd = new Date(proposedCheckIn.getTime() + (bCase.durationHours * 60000 * 60));
+                            const bReturn = new Date(bEnd.getTime() + (driveHome * 60000));
+                            if (bReturn <= eveningLimit) {
+                                scheduled.push({
+                                    ...bCase,
+                                    status: 'SCHEDULED',
+                                    assignedTechId: tech.id,
+                                    startTime: proposedCheckIn.toISOString(),
+                                    checkInTime: proposedCheckIn.toISOString(),
+                                });
+                                proposedCheckIn.setTime(bEnd.getTime());
+                            }
+                        }
+                    }
+                    
                     currentStackTime = proposedCheckIn;
                     originString = destString;
                 } else {
