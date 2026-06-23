@@ -150,7 +150,7 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
 }
 
 // Safe fetch wrapper — never throws, returns null on failure
-async function safeFetch(url: string, headers: Record<string, string>, timeoutMs = 12000): Promise<Response | null> {
+async function safeFetch(url: string, headers: Record<string, string>, timeoutMs = 8000): Promise<Response | null> {
     try {
         return await fetch(url, { method: 'GET', headers, signal: AbortSignal.timeout(timeoutMs) });
     } catch {
@@ -215,7 +215,8 @@ export async function GET() {
         // ──────────────────────────────────────────────────────
         const selectParams = 'wonum,status,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode},locations{region}';
         
-        const allChunkTasks: Promise<any[]>[] = [];
+        // Build all chunk URL tasks as functions (not started yet)
+        const allChunkFns: (() => Promise<any[]>)[] = [];
 
         // Chunk tasks for RTS (by origrecordid from STAGE6 SRs)
         for (let i = 0; i < uniqueSrs.length; i += 50) {
@@ -223,26 +224,30 @@ export async function GET() {
             const srStr = chunk.map(w => `"${w}"`).join(',');
             const whereClause = encodeURIComponent(`origrecordid in [${srStr}]`);
             const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
-            allChunkTasks.push(
+            allChunkFns.push(() =>
                 safeFetch(osUrl, headers).then(r => safeJson(r)).then(data => data ? (data['rdfs:member'] || data.member || []) : [])
             );
         }
 
         // Chunk tasks for Scheduled WOs (by wonum directly)
-        // We fetch ALL scheduled wonums since they may have SR status != STAGE6
         const schedWonumArr = [...schedWonums];
         for (let i = 0; i < schedWonumArr.length; i += 50) {
             const chunk = schedWonumArr.slice(i, i + 50);
             const wonumStr = chunk.map(w => `"${w}"`).join(',');
             const whereClause = encodeURIComponent(`wonum in [${wonumStr}]`);
             const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
-            allChunkTasks.push(
+            allChunkFns.push(() =>
                 safeFetch(osUrl, headers).then(r => safeJson(r)).then(data => data ? (data['rdfs:member'] || data.member || []) : [])
             );
         }
 
-        // Fire ALL chunk tasks at once (Maximo can handle ~20 concurrent requests)
-        const allChunkResults = await Promise.all(allChunkTasks);
+        // Execute in controlled batches of 8 concurrent requests max
+        const allChunkResults: any[][] = [];
+        for (let i = 0; i < allChunkFns.length; i += 8) {
+            const batch = allChunkFns.slice(i, i + 8).map(fn => fn());
+            const batchResults = await Promise.all(batch);
+            allChunkResults.push(...batchResults);
+        }
         
         // Merge all results into a single WO map
         const finalValidWosMap = new Map<string, any>();
@@ -307,6 +312,9 @@ export async function GET() {
 
     } catch (err: any) {
         console.error('Workorder API Error:', err);
-        return NextResponse.json({ error: 'Database connection failed', details: err.message }, { status: 500 });
+        // Always return 200 with empty data so frontend never sees a hard error
+        return NextResponse.json({ rtsOrders: [], scheduledOrders: [], _error: err.message }, {
+            headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0' }
+        });
     }
 }

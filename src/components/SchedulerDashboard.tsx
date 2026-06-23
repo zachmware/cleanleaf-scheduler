@@ -29,38 +29,57 @@ export default function SchedulerDashboard() {
   const [activeTab, setActiveTab] = useState<'gantt' | 'reports'>('gantt');
   const abortScheduling = useRef(false);
 
-  const fetchData = (isSoftRefresh = false) => {
-     if (isSoftRefresh) setIsRefreshing(true);
-     else setIsLoadingDB(true);
-     setDbError(null);
+  const fetchData = async (isSoftRefresh = false, _retryCount = 0) => {
+     if (_retryCount === 0) {
+       if (isSoftRefresh) setIsRefreshing(true);
+       else setIsLoadingDB(true);
+       setDbError(null);
+     }
 
-     Promise.all([
-        fetch(`/api/workorders?t=${Date.now()}`).then(res => {
-            if (!res.ok) throw new Error('WorkOrder API Error');
-            return res.json();
-        }),
-        fetch(`/api/technicians?t=${Date.now()}`).then(res => {
-            if (!res.ok) throw new Error('Technician API Error');
-            return res.json();
-        })
-     ]).then(([woData, techData]) => {
-         if (woData && woData.rtsOrders) {
-             setRtsOrders(woData.rtsOrders);
-             setScheduledOrders(woData.scheduledOrders || []);
-             // Removed the logic that forced targetDateStr to jump to scheduledOrders[0] (which is the furthest future date)
-         } else if (woData && Array.isArray(woData)) {
-             setRtsOrders(woData); // Fallback for cached legacy response
-         }
-         if (techData && Array.isArray(techData)) setTechnicians(techData);
-     })
-      .catch(e => {
-          console.error("Failed to connect to Maximo:", e);
-          setDbError(e.message);
-      })
-      .finally(() => {
-          setIsLoadingDB(false);
-          setIsRefreshing(false);
-      });
+     try {
+       const [woRes, techRes] = await Promise.all([
+         fetch(`/api/workorders?t=${Date.now()}`),
+         fetch(`/api/technicians?t=${Date.now()}`)
+       ]);
+
+       const woData = woRes.ok ? await woRes.json() : null;
+       const techData = techRes.ok ? await techRes.json() : null;
+
+       // Check if we got meaningful data — if workorders came back empty, retry silently
+       const hasRtsData = woData?.rtsOrders?.length > 0;
+       const hasSchedData = woData?.scheduledOrders?.length > 0;
+       
+       if (!hasRtsData && !hasSchedData && _retryCount < 2) {
+         console.log(`Data empty on attempt ${_retryCount + 1}, retrying in 1.5s...`);
+         await new Promise(r => setTimeout(r, 1500));
+         return fetchData(isSoftRefresh, _retryCount + 1);
+       }
+
+       if (woData?.rtsOrders) {
+         setRtsOrders(woData.rtsOrders);
+         setScheduledOrders(woData.scheduledOrders || []);
+       } else if (woData && Array.isArray(woData)) {
+         setRtsOrders(woData);
+       }
+       if (techData && Array.isArray(techData)) setTechnicians(techData);
+       
+       // Clear any previous error
+       setDbError(null);
+     } catch (e: any) {
+       // Retry silently on network errors
+       if (_retryCount < 2) {
+         console.log(`Fetch error on attempt ${_retryCount + 1}, retrying in 1.5s...`);
+         await new Promise(r => setTimeout(r, 1500));
+         return fetchData(isSoftRefresh, _retryCount + 1);
+       }
+       console.error("Failed to connect to Maximo after 3 attempts:", e);
+       setDbError(e.message);
+     } finally {
+       if (_retryCount === 0 || _retryCount >= 2) {
+         setIsLoadingDB(false);
+         setIsRefreshing(false);
+       }
+     }
   };
 
   React.useEffect(() => {

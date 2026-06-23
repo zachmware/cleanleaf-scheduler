@@ -132,6 +132,8 @@ export async function GET() {
         
     } catch (err: any) {
         console.error("Technician API Error:", err);
-        return NextResponse.json({ error: 'Maximo API connection failed', details: err.message }, { status: 500 });
+        return NextResponse.json([], {
+            headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0' }
+        });
     }
 }
