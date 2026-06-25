@@ -6,7 +6,8 @@ import { mockRTSWorkOrders, mockScheduledOrders, WorkOrder, Technician } from '@
 import SidebarRTS from './SidebarRTS';
 import GanttTimeline from './GanttTimeline';
 import ReportsTab from './ReportsTab';
-import { Settings, Play, CalendarDays, RefreshCw, LayoutDashboard, FileText } from 'lucide-react';
+import ScorecardConfigTab from './ScorecardConfigTab';
+import { Settings, Play, CalendarDays, RefreshCw, LayoutDashboard, FileText, Sliders } from 'lucide-react';
 
 export default function SchedulerDashboard() {
   const [rtsOrders, setRtsOrders] = useState<WorkOrder[]>([]);
@@ -26,7 +27,9 @@ export default function SchedulerDashboard() {
   const [dbError, setDbError] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'gantt' | 'reports'>('gantt');
+  const [activeTab, setActiveTab] = useState<'gantt' | 'reports' | 'config'>('gantt');
+  const [showAutoScheduleModal, setShowAutoScheduleModal] = useState<boolean>(false);
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const abortScheduling = useRef(false);
 
   const fetchData = async (isSoftRefresh = false, _retryCount = 0) => {
@@ -151,7 +154,8 @@ export default function SchedulerDashboard() {
     }
   };
 
-  const handleAutoSchedule = async () => {
+  const handleAutoSchedule = async (filterRegions?: string[]) => {
+    setShowAutoScheduleModal(false);
     setIsScheduling(true);
     setScheduleProgress({ current: 0, total: 0, title: 'Parsing Regional Topology...' });
     
@@ -159,7 +163,15 @@ export default function SchedulerDashboard() {
     await new Promise(resolve => setTimeout(resolve, 50));
     
     let scheduled = [...scheduledOrders];
-    let remainingRts = [...rtsOrders].sort((a,b) => b.priority - a.priority); 
+    let remainingRts = [...rtsOrders].sort((a,b) => b.priority - a.priority);
+
+    // If regions were selected, filter technicians and RTS orders to only those regions
+    let activeTechnicians = technicians;
+    if (filterRegions && filterRegions.length > 0) {
+      const regionSet = new Set(filterRegions.map(r => r.toUpperCase()));
+      activeTechnicians = technicians.filter(t => regionSet.has((t.region || 'UNKNOWN').toUpperCase()));
+      remainingRts = remainingRts.filter(o => regionSet.has((o.region || 'UNKNOWN').toUpperCase()));
+    } 
     
     // Algorithm strictly maps from 6:00 AM 
     const businessStart = 6;
@@ -168,7 +180,7 @@ export default function SchedulerDashboard() {
     
     // 1. Calculate the Regional Capacities for the target day
     const regionalCapacity = new Map<string, number>();
-    for (const tech of technicians) {
+    for (const tech of activeTechnicians) {
         const strictRegionKey = (tech.region || 'UNKNOWN').toUpperCase();
         regionalCapacity.set(strictRegionKey, (regionalCapacity.get(strictRegionKey) || 0) + businessHoursPerDay);
     }
@@ -236,7 +248,7 @@ export default function SchedulerDashboard() {
     
     for (const regionKey of bundlesByRegion.keys()) {
         const regionBundles = bundlesByRegion.get(regionKey)!;
-        const regionTechs = technicians.filter(t => (t.region || 'UNKNOWN').toUpperCase() === regionKey);
+        const regionTechs = activeTechnicians.filter(t => (t.region || 'UNKNOWN').toUpperCase() === regionKey);
         if (regionTechs.length === 0) continue;
 
         // Phase 1: Load up tech's day with closest, highest-priority appointments
@@ -403,7 +415,7 @@ export default function SchedulerDashboard() {
     // Any tech with 0 assignments gets cases from ANY region
     // ============================================
     const assignedIdsSoFar = new Set(scheduled.map(o => o.id));
-    const emptyTechs = technicians.filter(t => {
+    const emptyTechs = activeTechnicians.filter(t => {
         return !scheduled.some(o => o.assignedTechId === t.id && (o.checkInTime || o.startTime || '').split('T')[0] === targetDateStr);
     });
 
@@ -523,6 +535,124 @@ export default function SchedulerDashboard() {
         </div>
       )}
 
+      {/* Auto-Schedule Configuration Modal */}
+      {showAutoScheduleModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.8)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 9999,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: '12px', border: '1px solid var(--primary)',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.5)', width: '480px', maxWidth: '90%'
+          }}>
+            <h2 style={{ marginBottom: '20px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.25rem' }}>
+              <Play size={20} style={{ color: 'var(--primary)' }} />
+              Auto-Schedule Configuration
+            </h2>
+
+            {/* Date Picker */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>Target Date</label>
+              <input
+                type="date"
+                value={targetDateStr}
+                onChange={(e) => setTargetDateStr(e.target.value)}
+                style={{
+                  background: 'var(--bg-color, #0f172a)', border: '1px solid var(--border-color)', color: 'var(--text-main)',
+                  padding: '8px 12px', borderRadius: '6px', fontFamily: 'inherit', width: '100%', fontSize: '0.9rem'
+                }}
+              />
+            </div>
+
+            {/* Region Checkboxes */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Regions</label>
+                <button
+                  onClick={() => {
+                    const allRegions = Array.from(new Set(technicians.map(t => (t.region || 'UNKNOWN').toUpperCase()))).sort();
+                    setSelectedRegions(prev => prev.length === allRegions.length ? [] : allRegions);
+                  }}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, padding: 0 }}
+                >
+                  {selectedRegions.length === Array.from(new Set(technicians.map(t => (t.region || 'UNKNOWN').toUpperCase()))).length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <div style={{
+                background: 'var(--bg-color, #0f172a)', border: '1px solid var(--border-color)', borderRadius: '8px',
+                padding: '8px', maxHeight: '180px', overflowY: 'auto',
+                display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px'
+              }}>
+                {Array.from(new Set(technicians.map(t => (t.region || 'UNKNOWN').toUpperCase()))).sort().map(region => {
+                  const techCount = technicians.filter(t => (t.region || 'UNKNOWN').toUpperCase() === region).length;
+                  const isChecked = selectedRegions.includes(region);
+                  return (
+                    <label
+                      key={region}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px',
+                        borderRadius: '6px', cursor: 'pointer',
+                        backgroundColor: isChecked ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                        border: isChecked ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid transparent',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          setSelectedRegions(prev =>
+                            prev.includes(region) ? prev.filter(r => r !== region) : [...prev, region]
+                          );
+                        }}
+                        style={{ accentColor: 'var(--primary)', width: '16px', height: '16px', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: 500 }}>{region}</span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>{techCount} tech{techCount !== 1 ? 's' : ''}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Warning Notice */}
+            <div style={{
+              background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.3)',
+              borderRadius: '8px', padding: '12px', marginBottom: '24px'
+            }}>
+              <p style={{ fontSize: '0.8rem', color: '#eab308', margin: 0, lineHeight: 1.5 }}>
+                ⚠️ Warning: Proceeding will evaluate and assign work orders to technicians across the selected regions. This will update scheduling data for many cases.
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                className="btn-secondary"
+                onClick={() => setShowAutoScheduleModal(false)}
+                style={{ padding: '8px 20px' }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-primary"
+                onClick={() => handleAutoSchedule(selectedRegions)}
+                disabled={selectedRegions.length === 0}
+                style={{
+                  padding: '8px 20px', display: 'flex', alignItems: 'center', gap: '8px',
+                  opacity: selectedRegions.length === 0 ? 0.5 : 1
+                }}
+              >
+                <Play size={16} fill="currentColor" /> Run Auto-Schedule
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="app-container">
         <div className="sidebar">
           {isLoadingDB ? (
@@ -577,6 +707,24 @@ export default function SchedulerDashboard() {
                    }}
                  >
                    <FileText size={16} /> Reports
+                 </button>
+                 <button 
+                   onClick={() => setActiveTab('config')}
+                   style={{
+                     background: activeTab === 'config' ? 'var(--primary)' : 'transparent',
+                     color: activeTab === 'config' ? '#fff' : 'var(--text-muted)',
+                     border: 'none',
+                     padding: '6px 16px',
+                     borderRadius: '6px',
+                     cursor: 'pointer',
+                     fontWeight: 600,
+                     display: 'flex',
+                     alignItems: 'center',
+                     gap: '6px',
+                     transition: 'all 0.2s'
+                   }}
+                 >
+                   <Sliders size={16} /> Config
                  </button>
               </div>
 
@@ -648,7 +796,11 @@ export default function SchedulerDashboard() {
               <button 
                 className={`btn-primary ${isScheduling ? 'opacity-50' : ''}`} 
                 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-                onClick={handleAutoSchedule}
+                onClick={() => {
+                  const uniqueRegions = Array.from(new Set(technicians.map(t => (t.region || 'UNKNOWN').toUpperCase()))).sort();
+                  setSelectedRegions(uniqueRegions);
+                  setShowAutoScheduleModal(true);
+                }}
                 disabled={isScheduling}
               >
                 <Play size={18} fill="currentColor" /> {isScheduling ? 'Evaluating Routing...' : 'Auto-Schedule'}
@@ -685,11 +837,13 @@ export default function SchedulerDashboard() {
                   onUnschedule={handleUnschedule}
                   onStatusChange={handleStatusChange}
                />
-            ) : (
+            ) : activeTab === 'reports' ? (
                <ReportsTab 
                   scheduledOrders={scheduledOrders} 
                   technicians={technicians} 
                />
+            ) : (
+               <ScorecardConfigTab />
             )}
           </div>
         </div>
