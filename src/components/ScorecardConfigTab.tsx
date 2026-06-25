@@ -308,12 +308,12 @@ export default function ScorecardConfigTab() {
   useEffect(() => {
     setConfig(getSchedulerConfig());
     setMounted(true);
-    // Fetch project names for autocomplete
+    // Fetch customer names for autocomplete
     fetch('/api/workorders')
       .then(r => r.json())
       .then(data => {
         const all = [...(data.rtsOrders || []), ...(data.scheduledOrders || [])];
-        const names = [...new Set(all.map((o: any) => o.projectName).filter(Boolean))] as string[];
+        const names = [...new Set(all.map((o: any) => o.customer).filter((c: string) => c && c !== 'Unknown Client'))] as string[];
         setAllCustomers(names.sort());
       })
       .catch(() => {});

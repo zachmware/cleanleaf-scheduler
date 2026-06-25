@@ -151,6 +151,7 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
             _isAbsoluteEmergency: baseScore === 100,
             caseNumber: row.ticketid || 'Unknown',
             caseType: row.customworktype || 'Unknown',
+            customer: row.customer || 'Unknown Client',
             projectName: row.projectName || 'Unknown',
             projectAddress: trueServiceAddress, 
             reportedPriorityText: pText,
