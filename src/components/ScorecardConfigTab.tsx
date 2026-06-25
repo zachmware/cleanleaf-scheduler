@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Settings, RotateCcw, Save, Clock, Zap, Layers, Truck, CheckCircle, Star, Plus, X } from 'lucide-react';
+import { Settings, RotateCcw, Save, Clock, Zap, Layers, Truck, CheckCircle, Star, Plus, X, Search } from 'lucide-react';
 
 // ─── Default Configuration ──────────────────────────────────────────────────
 
@@ -32,6 +32,7 @@ export interface SchedulerConfig {
   vipCustomers: {
     topTier: string[];
     midTier: string[];
+    lowTier: string[];
   };
 }
 
@@ -60,6 +61,7 @@ const DEFAULT_CONFIG: SchedulerConfig = {
   vipCustomers: {
     topTier: ['VIP1', 'MEGA_CORP'],
     midTier: ['TIER2'],
+    lowTier: [],
   },
 };
 
@@ -83,6 +85,7 @@ export function getSchedulerConfig(): SchedulerConfig {
       vipCustomers: {
         topTier: parsed?.vipCustomers?.topTier || [...DEFAULT_CONFIG.vipCustomers.topTier],
         midTier: parsed?.vipCustomers?.midTier || [...DEFAULT_CONFIG.vipCustomers.midTier],
+        lowTier: parsed?.vipCustomers?.lowTier || [...DEFAULT_CONFIG.vipCustomers.lowTier],
       },
     };
   } catch {
@@ -192,18 +195,128 @@ const PRIORITY_META: Record<string, { label: string; color: string; bg: string }
   advisory:  { label: 'Advisory (P5)',  color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
 };
 
+// ─── Customer Autocomplete Component ───────────────────────────────────────
+
+function CustomerAutocomplete({ allCustomers, existingCustomers, color, onAdd }: {
+  allCustomers: string[];
+  existingCustomers: string[];
+  color: string;
+  onAdd: (val: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const filtered = query.length >= 1
+    ? allCustomers
+        .filter(c => c.toLowerCase().includes(query.toLowerCase()) && !existingCustomers.includes(c))
+        .slice(0, 8)
+    : [];
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleSelect = (val: string) => {
+    onAdd(val);
+    setQuery('');
+    setShowDropdown(false);
+    setHighlightIdx(0);
+  };
+
+  return (
+    <div ref={wrapperRef} style={{ flex: 1, position: 'relative' }}>
+      <div style={{ display: 'flex', gap: '6px' }}>
+        <div style={{ position: 'relative', flex: 1 }}>
+          <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+          <input
+            type="text"
+            placeholder="Search customers..."
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setShowDropdown(true);
+              setHighlightIdx(0);
+            }}
+            onFocus={() => { if (query.length >= 1) setShowDropdown(true); }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightIdx(i => Math.min(i + 1, filtered.length - 1)); }
+              else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightIdx(i => Math.max(i - 1, 0)); }
+              else if (e.key === 'Enter' && filtered[highlightIdx]) { e.preventDefault(); handleSelect(filtered[highlightIdx]); }
+              else if (e.key === 'Escape') { setShowDropdown(false); }
+            }}
+            style={{ ...inputStyle, fontSize: '0.8rem', paddingLeft: '30px' }}
+          />
+        </div>
+      </div>
+      {showDropdown && filtered.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          marginTop: '4px', borderRadius: '8px', overflow: 'hidden',
+          border: '1px solid var(--border-color)', backgroundColor: '#1a2332',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.4)', maxHeight: '200px', overflowY: 'auto'
+        }}>
+          {filtered.map((item, idx) => (
+            <div
+              key={item}
+              onClick={() => handleSelect(item)}
+              onMouseEnter={() => setHighlightIdx(idx)}
+              style={{
+                padding: '8px 12px', cursor: 'pointer', fontSize: '0.8rem',
+                backgroundColor: idx === highlightIdx ? `${color}22` : 'transparent',
+                color: idx === highlightIdx ? color : 'var(--text-main)',
+                borderBottom: idx < filtered.length - 1 ? '1px solid var(--border-color)' : 'none',
+                transition: 'background-color 0.1s'
+              }}
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      )}
+      {showDropdown && query.length >= 1 && filtered.length === 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          marginTop: '4px', borderRadius: '8px', padding: '10px 12px',
+          border: '1px solid var(--border-color)', backgroundColor: '#1a2332',
+          fontSize: '0.78rem', color: 'var(--text-muted)', textAlign: 'center'
+        }}>
+          No matching customers found
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function ScorecardConfigTab() {
   const [config, setConfig] = useState<SchedulerConfig>(DEFAULT_CONFIG);
   const [saved, setSaved] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [allCustomers, setAllCustomers] = useState<string[]>([]);
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount + fetch customer list for autocomplete
   useEffect(() => {
     setConfig(getSchedulerConfig());
     setMounted(true);
+    // Fetch project names for autocomplete
+    fetch('/api/workorders')
+      .then(r => r.json())
+      .then(data => {
+        const all = [...(data.rtsOrders || []), ...(data.scheduledOrders || [])];
+        const names = [...new Set(all.map((o: any) => o.projectName).filter(Boolean))] as string[];
+        setAllCustomers(names.sort());
+      })
+      .catch(() => {});
   }, []);
 
   // ── Updaters ──
@@ -599,10 +712,10 @@ export default function ScorecardConfigTab() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-            {(['topTier', 'midTier'] as const).map(tier => {
-              const label = tier === 'topTier' ? 'Top Tier (+20 pts)' : 'Mid Tier (+15 pts)';
-              const color = tier === 'topTier' ? '#f59e0b' : '#3b82f6';
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+            {(['topTier', 'midTier', 'lowTier'] as const).map(tier => {
+              const label = tier === 'topTier' ? 'Top Tier (+20 pts)' : tier === 'midTier' ? 'Mid Tier (+15 pts)' : 'Low Tier (+10 pts)';
+              const color = tier === 'topTier' ? '#f59e0b' : tier === 'midTier' ? '#3b82f6' : '#8b5cf6';
               return (
                 <div key={tier} style={fieldGroup}>
                   <label style={labelStyle}>{label}</label>
@@ -638,50 +751,21 @@ export default function ScorecardConfigTab() {
                       </span>
                     ))}
                   </div>
-                  <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                    <input
-                      type="text"
-                      placeholder="Add customer code..."
-                      id={`vip-input-${tier}`}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          const val = (e.target as HTMLInputElement).value.trim().toUpperCase();
-                          if (val && !config.vipCustomers[tier].includes(val)) {
-                            setConfig(prev => ({
-                              ...prev,
-                              vipCustomers: {
-                                ...prev.vipCustomers,
-                                [tier]: [...prev.vipCustomers[tier], val]
-                              }
-                            }));
-                            (e.target as HTMLInputElement).value = '';
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '6px', position: 'relative' }}>
+                    <CustomerAutocomplete
+                      allCustomers={allCustomers}
+                      existingCustomers={config.vipCustomers[tier]}
+                      color={color}
+                      onAdd={(val) => {
+                        setConfig(prev => ({
+                          ...prev,
+                          vipCustomers: {
+                            ...prev.vipCustomers,
+                            [tier]: [...prev.vipCustomers[tier], val]
                           }
-                        }
+                        }));
                       }}
-                      style={{ ...inputStyle, flex: 1, fontSize: '0.8rem' }}
                     />
-                    <button
-                      onClick={() => {
-                        const input = document.getElementById(`vip-input-${tier}`) as HTMLInputElement;
-                        const val = input?.value.trim().toUpperCase();
-                        if (val && !config.vipCustomers[tier].includes(val)) {
-                          setConfig(prev => ({
-                            ...prev,
-                            vipCustomers: {
-                              ...prev.vipCustomers,
-                              [tier]: [...prev.vipCustomers[tier], val]
-                            }
-                          }));
-                          if (input) input.value = '';
-                        }
-                      }}
-                      style={{
-                        ...btnBase, padding: '6px 12px', fontSize: '0.78rem',
-                        backgroundColor: `${color}22`, border: `1px solid ${color}44`, color
-                      }}
-                    >
-                      <Plus size={14} /> Add
-                    </button>
                   </div>
                 </div>
               );

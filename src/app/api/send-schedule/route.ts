@@ -9,10 +9,19 @@ export async function POST(request: Request) {
         }
 
         const resend = new Resend(apiKey);
-        const { scheduledOrders, technicians, targetDate } = await request.json();
+        const { scheduledOrders: allOrders, technicians, targetDate } = await request.json();
+
+        // Filter to only appointments on the target date
+        const scheduledOrders = targetDate 
+            ? allOrders.filter((o: any) => {
+                if (!o.startTime) return false;
+                const orderDate = new Date(o.startTime).toISOString().split('T')[0];
+                return orderDate === targetDate;
+              })
+            : allOrders;
 
         if (!scheduledOrders || scheduledOrders.length === 0) {
-            return NextResponse.json({ error: 'No scheduled orders to send' }, { status: 400 });
+            return NextResponse.json({ error: `No scheduled appointments found for ${targetDate || 'the target date'}` }, { status: 400 });
         }
 
         // Build CSV content (compatible with Excel)
@@ -108,7 +117,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ 
             success: true, 
             emailId: data?.id,
-            message: `Schedule report sent to zware@cleanleafenergy.com`
+            message: `Schedule report for ${targetDate} sent to zware@borregosolar.com (${scheduledOrders.length} appointments)`
         });
 
     } catch (e: any) {
