@@ -7,7 +7,7 @@ import SidebarRTS from './SidebarRTS';
 import GanttTimeline from './GanttTimeline';
 import ReportsTab from './ReportsTab';
 import ScorecardConfigTab from './ScorecardConfigTab';
-import { Settings, Play, CalendarDays, RefreshCw, LayoutDashboard, FileText, Sliders } from 'lucide-react';
+import { Settings, Play, CalendarDays, RefreshCw, LayoutDashboard, FileText, Sliders, Mail } from 'lucide-react';
 
 export default function SchedulerDashboard() {
   const [rtsOrders, setRtsOrders] = useState<WorkOrder[]>([]);
@@ -30,6 +30,7 @@ export default function SchedulerDashboard() {
   const [activeTab, setActiveTab] = useState<'gantt' | 'reports' | 'config'>('gantt');
   const [showAutoScheduleModal, setShowAutoScheduleModal] = useState<boolean>(false);
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const abortScheduling = useRef(false);
 
   const fetchData = async (isSoftRefresh = false, _retryCount = 0) => {
@@ -792,6 +793,33 @@ export default function SchedulerDashboard() {
 
               <button className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Settings size={18} /> Constraints
+              </button>
+              <button 
+                className="btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                disabled={isSendingEmail || scheduledOrders.length === 0}
+                onClick={async () => {
+                  setIsSendingEmail(true);
+                  try {
+                    const res = await fetch('/api/send-schedule', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ scheduledOrders, technicians, targetDate: targetDateStr })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                      alert('✅ Schedule report emailed successfully!');
+                    } else {
+                      alert('❌ Email failed: ' + (data.error || 'Unknown error'));
+                    }
+                  } catch (e: any) {
+                    alert('❌ Email failed: ' + e.message);
+                  } finally {
+                    setIsSendingEmail(false);
+                  }
+                }}
+              >
+                <Mail size={18} /> {isSendingEmail ? 'Sending...' : 'Email Schedule'}
               </button>
               <button 
                 className={`btn-primary ${isScheduling ? 'opacity-50' : ''}`} 
