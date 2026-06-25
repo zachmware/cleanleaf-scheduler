@@ -31,6 +31,7 @@ export default function SchedulerDashboard() {
   const [showAutoScheduleModal, setShowAutoScheduleModal] = useState<boolean>(false);
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailOnComplete, setEmailOnComplete] = useState(true);
   const [scheduledTime, setScheduledTime] = useState<string | null>(null);
   const [scheduleTimeInput, setScheduleTimeInput] = useState('17:00');
   const scheduledTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -158,7 +159,7 @@ export default function SchedulerDashboard() {
     }
   };
 
-  const handleAutoSchedule = async (filterRegions?: string[]) => {
+  const handleAutoSchedule = async (filterRegions?: string[], shouldEmail?: boolean) => {
     setShowAutoScheduleModal(false);
     setIsScheduling(true);
     setScheduleProgress({ current: 0, total: 0, title: 'Parsing Regional Topology...' });
@@ -484,6 +485,28 @@ export default function SchedulerDashboard() {
     setScheduledOrders(scheduled);
     setRtsOrders(prev => prev.filter(o => !assignedIds.has(o.id)));
     setIsScheduling(false);
+
+    // Auto-email if requested
+    if (shouldEmail) {
+      try {
+        setIsSendingEmail(true);
+        const res = await fetch('/api/send-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scheduledOrders: scheduled, technicians, targetDate: targetDateStr })
+        });
+        const data = await res.json();
+        if (data.error) {
+          alert(`Email failed: ${data.error}`);
+        } else {
+          alert(`✅ Schedule report emailed successfully!`);
+        }
+      } catch (e: any) {
+        alert(`Email error: ${e.message}`);
+      } finally {
+        setIsSendingEmail(false);
+      }
+    }
   };
   
   // Find the mocked order for overlay display
@@ -704,6 +727,29 @@ export default function SchedulerDashboard() {
               </p>
             </div>
 
+            {/* Email on Completion Checkbox */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '10px',
+              marginBottom: '16px', padding: '12px',
+              background: 'rgba(16, 185, 129, 0.06)', borderRadius: '8px',
+              border: '1px solid rgba(16, 185, 129, 0.15)'
+            }}>
+              <input
+                type="checkbox"
+                id="email-on-complete"
+                checked={emailOnComplete}
+                onChange={(e) => setEmailOnComplete(e.target.checked)}
+                style={{ width: '18px', height: '18px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+              />
+              <label htmlFor="email-on-complete" style={{ fontSize: '0.85rem', color: 'var(--text-main)', cursor: 'pointer', flex: 1 }}>
+                <Mail size={14} style={{ marginRight: '6px', verticalAlign: 'middle', color: 'var(--primary)' }} />
+                Email report on completion
+                <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Sends the target date schedule to zware@borregosolar.com
+                </span>
+              </label>
+            </div>
+
             {/* Action Buttons */}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button
@@ -715,7 +761,7 @@ export default function SchedulerDashboard() {
               </button>
               <button
                 className="btn-primary"
-                onClick={() => handleAutoSchedule(selectedRegions)}
+                onClick={() => handleAutoSchedule(selectedRegions, emailOnComplete)}
                 disabled={selectedRegions.length === 0}
                 style={{
                   padding: '8px 20px', display: 'flex', alignItems: 'center', gap: '8px',
