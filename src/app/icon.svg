@@ -1,26 +1,25 @@
 <svg width="256" height="256" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Background -->
-  <rect width="64" height="64" rx="12" fill="#063f58"/>
+  <rect width="64" height="64" rx="12" fill="#1a3a4a"/>
   
-  <!-- Left half of leaf -->
-  <path d="M32 8 C 32 8, 12 24, 12 42 C 12 54, 22 60, 32 60 Z" fill="#3cd876"/>
+  <!-- Leaf shape - elongated teardrop, pointed at top, rounded at bottom -->
+  <!-- Left half -->
+  <path d="M32 6 C 32 6, 14 28, 14 42 C 14 52, 22 58, 32 58 Z" fill="#2ecc71"/>
+  <!-- Right half (slightly darker) -->
+  <path d="M32 6 C 32 6, 50 28, 50 42 C 50 52, 42 58, 32 58 Z" fill="#27ae60"/>
   
-  <!-- Right half of leaf -->
-  <path d="M32 8 C 32 8, 52 24, 52 42 C 52 54, 42 60, 32 60 Z" fill="#15bc5e"/>
+  <!-- Center stem -->
+  <line x1="32" y1="14" x2="32" y2="58" stroke="#1a8a4a" stroke-width="1.8" stroke-linecap="round"/>
   
-  <!-- Center line and Veins -->
-  <g stroke="#063f58" stroke-width="2" stroke-linecap="round">
-    <!-- Center line -->
-    <path d="M32 8 L 32 60"/>
-    
-    <!-- Left veins (UP and LEFT) -->
-    <path d="M32 22 L 18 16"/>
-    <path d="M32 36 L 15 28"/>
-    <path d="M32 48 L 16 42"/>
-    
-    <!-- Right veins (UP and RIGHT) -->
-    <path d="M32 26 L 48 18"/>
-    <path d="M32 40 L 51 30"/>
-    <path d="M32 52 L 48 44"/>
-  </g>
+  <!-- Left veins - curving outward and upward -->
+  <path d="M32 24 Q 26 22, 19 25" stroke="#1a8a4a" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+  <path d="M32 32 Q 25 29, 17 33" stroke="#1a8a4a" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+  <path d="M32 40 Q 26 37, 18 41" stroke="#1a8a4a" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+  <path d="M32 48 Q 27 46, 21 49" stroke="#1a8a4a" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+  
+  <!-- Right veins - curving outward and upward -->
+  <path d="M32 24 Q 38 22, 45 25" stroke="#1a8a4a" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+  <path d="M32 32 Q 39 29, 47 33" stroke="#1a8a4a" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+  <path d="M32 40 Q 38 37, 46 41" stroke="#1a8a4a" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+  <path d="M32 48 Q 37 46, 43 49" stroke="#1a8a4a" stroke-width="1.4" stroke-linecap="round" fill="none"/>
 </svg>
