@@ -415,8 +415,8 @@ export default function SchedulerDashboard() {
     }
 
     // ============================================
-    // CROSS-REGION OVERFLOW: Fill empty tech schedules
-    // Any tech with 0 assignments gets cases from ANY region
+    // SAME-REGION OVERFLOW: Fill empty tech schedules
+    // Any tech with 0 assignments gets unassigned cases from THEIR OWN region only
     // ============================================
     const assignedIdsSoFar = new Set(scheduled.map(o => o.id));
     const emptyTechs = activeTechnicians.filter(t => {
@@ -424,16 +424,19 @@ export default function SchedulerDashboard() {
     });
 
     if (emptyTechs.length > 0) {
-        // Get all remaining RTS orders not yet assigned
-        const overflowPool = targetRTSPool
-            .filter(o => !assignedIdsSoFar.has(o.id))
-            .sort((a, b) => b.priority - a.priority);
-
         for (const tech of emptyTechs) {
             if (abortScheduling.current) break;
             iteration++;
-            setScheduleProgress({ current: iteration, total: targetRTSPool.length, title: `Cross-region: ${tech.name}` });
+            setScheduleProgress({ current: iteration, total: targetRTSPool.length, title: `Overflow: ${tech.name}` });
             await new Promise(resolve => setTimeout(resolve, 10));
+
+            // Only get orders from this tech's own region
+            const techRegion = (tech.region || 'UNKNOWN').toUpperCase();
+            const overflowPool = targetRTSPool
+                .filter(o => !assignedIdsSoFar.has(o.id) && (o.region || 'UNKNOWN').toUpperCase() === techRegion)
+                .sort((a, b) => b.priority - a.priority);
+
+            if (overflowPool.length === 0) continue;
 
             const techHome = tech.homeAddress && tech.homeAddress !== 'Unknown' ? tech.homeAddress : `${tech.region || 'US'}`;
             let currentTime = new Date(targetDateObj);
@@ -442,7 +445,7 @@ export default function SchedulerDashboard() {
             const eveningLimit2 = new Date(targetDateObj);
             eveningLimit2.setHours(businessEnd, 0, 0, 0);
 
-            // Greedily assign closest feasible jobs
+            // Greedily assign closest feasible jobs from same region
             const techAssigned: string[] = [];
             for (const order of overflowPool) {
                 if (assignedIdsSoFar.has(order.id)) continue;
@@ -457,7 +460,7 @@ export default function SchedulerDashboard() {
                 const proposedCheckOut = new Date(proposedCheckIn.getTime() + (jobMins * 60000));
                 const returnHomeTime = new Date(proposedCheckOut.getTime() + (driveHome * 60000));
 
-                if (returnHomeTime <= eveningLimit2 && driveTo < 180) { // Max 3hr drive
+                if (returnHomeTime <= eveningLimit2 && driveTo < 180) {
                     scheduled.push({
                         ...order,
                         status: 'SCHEDULED',
