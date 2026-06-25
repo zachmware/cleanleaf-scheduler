@@ -58,15 +58,17 @@ body {
 }
 
 .topbar {
-  height: 60px;
+  min-height: 60px;
+  height: auto;
   background: rgba(30, 41, 59, 0.8);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
-  padding: 0 24px;
+  padding: 8px 24px;
   justify-content: space-between;
   z-index: 5;
+  overflow: visible;
 }
 
 .brand {
@@ -114,8 +116,12 @@ body {
 
 .topbar-controls {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+  overflow: visible;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 /* Base Draggable Card (RTS Item) */

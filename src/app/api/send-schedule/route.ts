@@ -88,7 +88,7 @@ export async function POST(request: Request) {
 
         const { data, error } = await resend.emails.send({
             from: 'CleanLeaf Scheduler <onboarding@resend.dev>',
-            to: ['zware@cleanleafenergy.com'],
+            to: ['zware@borregosolar.com'],
             subject: `📋 Auto-Schedule Report — ${targetDate || new Date().toISOString().split('T')[0]}`,
             html: emailHtml,
             attachments: [

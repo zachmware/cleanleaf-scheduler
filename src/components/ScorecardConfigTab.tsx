@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Settings, RotateCcw, Save, Clock, Zap, Layers, Truck, CheckCircle } from 'lucide-react';
+import { Settings, RotateCcw, Save, Clock, Zap, Layers, Truck, CheckCircle, Star, Plus, X } from 'lucide-react';
 
 // ─── Default Configuration ──────────────────────────────────────────────────
 
@@ -29,6 +29,10 @@ export interface SchedulerConfig {
     pointsPerColocated: number;
     maxClusterBonus:    number;
   };
+  vipCustomers: {
+    topTier: string[];
+    midTier: string[];
+  };
 }
 
 const DEFAULT_CONFIG: SchedulerConfig = {
@@ -53,6 +57,10 @@ const DEFAULT_CONFIG: SchedulerConfig = {
     pointsPerColocated: 2,
     maxClusterBonus:    15,
   },
+  vipCustomers: {
+    topTier: ['VIP1', 'MEGA_CORP'],
+    midTier: ['TIER2'],
+  },
 };
 
 /** Reads from localStorage and returns the current config, falling back to defaults for any missing keys. */
@@ -72,6 +80,10 @@ export function getSchedulerConfig(): SchedulerConfig {
       durationDefaults: { ...DEFAULT_CONFIG.durationDefaults, ...parsed?.durationDefaults },
       scheduling:       { ...DEFAULT_CONFIG.scheduling,       ...parsed?.scheduling },
       cluster:          { ...DEFAULT_CONFIG.cluster,          ...parsed?.cluster },
+      vipCustomers: {
+        topTier: parsed?.vipCustomers?.topTier || [...DEFAULT_CONFIG.vipCustomers.topTier],
+        midTier: parsed?.vipCustomers?.midTier || [...DEFAULT_CONFIG.vipCustomers.midTier],
+      },
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -574,6 +586,106 @@ export default function ScorecardConfigTab() {
                 </span>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* ─── Section 5: VIP Customers ─── */}
+        <div style={sectionCard}>
+          <div style={sectionHeader}>
+            <Star size={18} color="var(--primary)" />
+            <div>
+              <h3 style={sectionTitle}>VIP Customers</h3>
+              <p style={sectionSubtitle}>Customer codes that receive priority scoring bonuses (+20 for Top Tier, +15 for Mid Tier)</p>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            {(['topTier', 'midTier'] as const).map(tier => {
+              const label = tier === 'topTier' ? 'Top Tier (+20 pts)' : 'Mid Tier (+15 pts)';
+              const color = tier === 'topTier' ? '#f59e0b' : '#3b82f6';
+              return (
+                <div key={tier} style={fieldGroup}>
+                  <label style={labelStyle}>{label}</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px', minHeight: '36px' }}>
+                    {config.vipCustomers[tier].map((cust, idx) => (
+                      <span
+                        key={idx}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '4px',
+                          padding: '4px 10px', borderRadius: '6px',
+                          backgroundColor: `${color}18`, border: `1px solid ${color}44`,
+                          fontSize: '0.8rem', fontWeight: 600, color
+                        }}
+                      >
+                        {cust}
+                        <button
+                          onClick={() => {
+                            setConfig(prev => ({
+                              ...prev,
+                              vipCustomers: {
+                                ...prev.vipCustomers,
+                                [tier]: prev.vipCustomers[tier].filter((_, i) => i !== idx)
+                              }
+                            }));
+                          }}
+                          style={{
+                            background: 'none', border: 'none', color, cursor: 'pointer',
+                            padding: '0', display: 'flex', fontSize: '0.7rem'
+                          }}
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                    <input
+                      type="text"
+                      placeholder="Add customer code..."
+                      id={`vip-input-${tier}`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = (e.target as HTMLInputElement).value.trim().toUpperCase();
+                          if (val && !config.vipCustomers[tier].includes(val)) {
+                            setConfig(prev => ({
+                              ...prev,
+                              vipCustomers: {
+                                ...prev.vipCustomers,
+                                [tier]: [...prev.vipCustomers[tier], val]
+                              }
+                            }));
+                            (e.target as HTMLInputElement).value = '';
+                          }
+                        }
+                      }}
+                      style={{ ...inputStyle, flex: 1, fontSize: '0.8rem' }}
+                    />
+                    <button
+                      onClick={() => {
+                        const input = document.getElementById(`vip-input-${tier}`) as HTMLInputElement;
+                        const val = input?.value.trim().toUpperCase();
+                        if (val && !config.vipCustomers[tier].includes(val)) {
+                          setConfig(prev => ({
+                            ...prev,
+                            vipCustomers: {
+                              ...prev.vipCustomers,
+                              [tier]: [...prev.vipCustomers[tier], val]
+                            }
+                          }));
+                          if (input) input.value = '';
+                        }
+                      }}
+                      style={{
+                        ...btnBase, padding: '6px 12px', fontSize: '0.78rem',
+                        backgroundColor: `${color}22`, border: `1px solid ${color}44`, color
+                      }}
+                    >
+                      <Plus size={14} /> Add
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
