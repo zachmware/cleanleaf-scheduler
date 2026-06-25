@@ -7,7 +7,7 @@ import SidebarRTS from './SidebarRTS';
 import GanttTimeline from './GanttTimeline';
 import ReportsTab from './ReportsTab';
 import ScorecardConfigTab from './ScorecardConfigTab';
-import { Settings, Play, CalendarDays, RefreshCw, LayoutDashboard, FileText, Sliders, Mail } from 'lucide-react';
+import { Settings, Play, CalendarDays, RefreshCw, LayoutDashboard, FileText, Sliders, Mail, Clock } from 'lucide-react';
 
 export default function SchedulerDashboard() {
   const [rtsOrders, setRtsOrders] = useState<WorkOrder[]>([]);
@@ -31,6 +31,9 @@ export default function SchedulerDashboard() {
   const [showAutoScheduleModal, setShowAutoScheduleModal] = useState<boolean>(false);
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [scheduledTime, setScheduledTime] = useState<string | null>(null);
+  const [scheduleTimeInput, setScheduleTimeInput] = useState('17:00');
+  const scheduledTimerRef = useRef<NodeJS.Timeout | null>(null);
   const abortScheduling = useRef(false);
 
   const fetchData = async (isSoftRefresh = false, _retryCount = 0) => {
@@ -629,6 +632,75 @@ export default function SchedulerDashboard() {
               </p>
             </div>
 
+            {/* Schedule for Later */}
+            <div style={{
+              background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.3)',
+              borderRadius: '8px', padding: '16px', marginBottom: '24px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <Clock size={16} style={{ color: '#818cf8' }} />
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#818cf8' }}>Schedule for Later</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <input
+                  type="time"
+                  value={scheduleTimeInput}
+                  onChange={(e) => setScheduleTimeInput(e.target.value)}
+                  style={{
+                    background: 'var(--surface-color)', border: '1px solid var(--border-color)',
+                    color: 'var(--text-main)', padding: '8px 12px', borderRadius: '6px', fontFamily: 'inherit'
+                  }}
+                />
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ET</span>
+                <button
+                  className="btn-secondary"
+                  disabled={selectedRegions.length === 0}
+                  style={{ padding: '8px 16px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  onClick={() => {
+                    const [hours, minutes] = scheduleTimeInput.split(':').map(Number);
+                    const now = new Date();
+                    const target = new Date();
+                    target.setHours(hours, minutes, 0, 0);
+                    // If time is in the past, schedule for tomorrow
+                    if (target <= now) target.setDate(target.getDate() + 1);
+                    const delayMs = target.getTime() - now.getTime();
+                    
+                    // Clear any existing timer
+                    if (scheduledTimerRef.current) clearTimeout(scheduledTimerRef.current);
+                    
+                    const regionsToUse = [...selectedRegions];
+                    scheduledTimerRef.current = setTimeout(async () => {
+                      // Auto-run scheduler
+                      await handleAutoSchedule(regionsToUse);
+                      // Wait a bit for state to settle, then auto-email
+                      setTimeout(async () => {
+                        try {
+                          const res = await fetch('/api/send-schedule', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ scheduledOrders, technicians, targetDate: targetDateStr })
+                          });
+                          const data = await res.json();
+                          console.log('Scheduled email result:', data);
+                        } catch (e) {
+                          console.error('Scheduled email failed:', e);
+                        }
+                        setScheduledTime(null);
+                      }, 5000);
+                    }, delayMs);
+                    
+                    setScheduledTime(target.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }));
+                    setShowAutoScheduleModal(false);
+                  }}
+                >
+                  <Clock size={14} /> Schedule & Email
+                </button>
+              </div>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '8px 0 0', opacity: 0.7 }}>
+                Keep this browser tab open. The scheduler will auto-run at the selected time and email results.
+              </p>
+            </div>
+
             {/* Action Buttons */}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button
@@ -647,7 +719,7 @@ export default function SchedulerDashboard() {
                   opacity: selectedRegions.length === 0 ? 0.5 : 1
                 }}
               >
-                <Play size={16} fill="currentColor" /> Run Auto-Schedule
+                <Play size={16} fill="currentColor" /> Run Now
               </button>
             </div>
           </div>
@@ -668,6 +740,25 @@ export default function SchedulerDashboard() {
             <div className="brand">
               <CalendarDays className="h-6 w-6" style={{ color: 'var(--primary)' }} />
               Cleanleaf Scheduling Tool
+              {scheduledTime && (
+                <span style={{
+                  marginLeft: '16px', padding: '4px 12px', borderRadius: '6px',
+                  background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)',
+                  fontSize: '0.75rem', color: '#818cf8', display: 'inline-flex', alignItems: 'center', gap: '6px'
+                }}>
+                  <Clock size={12} /> Scheduled: {scheduledTime}
+                  <button
+                    onClick={() => {
+                      if (scheduledTimerRef.current) clearTimeout(scheduledTimerRef.current);
+                      setScheduledTime(null);
+                    }}
+                    style={{
+                      background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer',
+                      fontSize: '0.7rem', fontWeight: 700, padding: '0 0 0 4px'
+                    }}
+                  >✕</button>
+                </span>
+              )}
             </div>
             
             <div className="topbar-controls">
