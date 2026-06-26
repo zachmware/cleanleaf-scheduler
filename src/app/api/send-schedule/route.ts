@@ -24,60 +24,132 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: `No scheduled appointments found for ${targetDate || 'the target date'}` }, { status: 400 });
         }
 
+        // Group orders by tech for travel time logic
+        const ordersByTech = new Map<string, any[]>();
+        for (const order of scheduledOrders) {
+            const techId = order.assignedTechId || 'UNASSIGNED';
+            if (!ordersByTech.has(techId)) ordersByTech.set(techId, []);
+            ordersByTech.get(techId)!.push(order);
+        }
+        // Sort each tech's orders by start time
+        for (const [, orders] of ordersByTech) {
+            orders.sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+        }
+
         // Build CSV content (compatible with Excel)
         const headers = [
-            'Work Order', 'Case #', 'Title', 'Case Type', 'Priority', 'Region',
-            'Project', 'Address', 'Technician', 'Tech ID', 'Start Time',
-            'Duration (hrs)', 'Status'
+            'Work Order', 'Case #', 'Title', 'Case Type', 'Priority', 'Priority Score',
+            'Region', 'Project', 'Address', 'Technician', 'Tech ID', 'Start Time',
+            'Duration (hrs)', 'Travel To (min)', 'Travel From (min)', 'Status'
         ];
 
-        const rows = scheduledOrders.map((order: any) => {
-            const tech = technicians?.find((t: any) => t.id === order.assignedTechId);
-            const techName = tech?.name || order.assignedTechId || 'Unassigned';
-            
-            return [
-                order.id?.split('_')[0] || '',
-                order.caseNumber || '',
-                `"${(order.title || '').replace(/"/g, '""')}"`,
-                order.caseType || '',
-                order.reportedPriorityText || '',
-                order.region || '',
-                `"${(order.projectName || '').replace(/"/g, '""')}"`,
-                `"${(order.projectAddress || '').replace(/"/g, '""')}"`,
-                `"${techName}"`,
-                order.assignedTechId || '',
-                order.startTime ? new Date(order.startTime).toLocaleString('en-US', { timeZone: 'America/New_York' }) : '',
-                order.durationHours || '',
-                order.status || ''
-            ].join(',');
-        });
+        let totalTravelTo = 0;
+        let totalTravelFrom = 0;
+        let totalPriorityScore = 0;
 
-        const csvContent = [headers.join(','), ...rows].join('\n');
-        const csvBuffer = Buffer.from(csvContent, 'utf-8');
+        const rows: string[] = [];
+        for (const [techId, techOrders] of ordersByTech) {
+            const tech = technicians?.find((t: any) => t.id === techId);
+            const techName = tech?.name || techId || 'Unassigned';
+
+            techOrders.forEach((order: any, idx: number) => {
+                const isFirst = idx === 0;
+                const isLast = idx === techOrders.length - 1;
+                const travelTo = order.travelToMins != null ? order.travelToMins : '';
+                
+                // Travel From: only show on the LAST appointment for each tech
+                // For the last appointment, estimate travel home (same as travelTo as approximation)
+                const travelFrom = isLast ? (order.travelToMins != null ? order.travelToMins : '') : '';
+
+                // For multi-appointment techs, only show travel-to on transitions 
+                // (first appointment gets travel from home, subsequent get travel between sites)
+                const displayTravelTo = isFirst ? travelTo : (order.travelToMins != null ? order.travelToMins : '');
+
+                if (typeof displayTravelTo === 'number') totalTravelTo += displayTravelTo;
+                if (typeof travelFrom === 'number') totalTravelFrom += travelFrom;
+                totalPriorityScore += order.priority || 0;
+
+                rows.push([
+                    order.id?.split('_')[0] || '',
+                    order.caseNumber || '',
+                    `"${(order.title || '').replace(/"/g, '""')}"`,
+                    order.caseType || '',
+                    order.reportedPriorityText || '',
+                    order.priority || '',
+                    order.region || '',
+                    `"${(order.projectName || '').replace(/"/g, '""')}"`,
+                    `"${(order.projectAddress || '').replace(/"/g, '""')}"`,
+                    `"${techName}"`,
+                    order.assignedTechId || '',
+                    order.startTime ? new Date(order.startTime).toLocaleString('en-US', { timeZone: 'America/New_York' }) : '',
+                    order.durationHours || '',
+                    displayTravelTo,
+                    travelFrom,
+                    order.status || ''
+                ].join(','));
+            });
+        }
 
         // Build summary stats
         const uniqueTechs = new Set(scheduledOrders.map((o: any) => o.assignedTechId).filter(Boolean));
         const uniqueRegions = new Set(scheduledOrders.map((o: any) => o.region).filter(Boolean));
         const totalHours = scheduledOrders.reduce((sum: number, o: any) => sum + (o.durationHours || 0), 0);
+        const avgPriority = scheduledOrders.length > 0 ? (totalPriorityScore / scheduledOrders.length).toFixed(1) : '0';
+        const avgAptsPerTech = uniqueTechs.size > 0 ? (scheduledOrders.length / uniqueTechs.size).toFixed(1) : '0';
+        const totalTravelMins = totalTravelTo + totalTravelFrom;
+        const avgTravelPerTech = uniqueTechs.size > 0 ? (totalTravelMins / uniqueTechs.size).toFixed(0) : '0';
+        const avgWorkPerTech = uniqueTechs.size > 0 ? (totalHours / uniqueTechs.size).toFixed(1) : '0';
+
+        // Summary row
+        const summaryRow = [
+            '"SUMMARY"', '', '', '', '', avgPriority,
+            '', '', '', `"${uniqueTechs.size} techs"`, '',
+            `"Avg ${avgAptsPerTech}/tech"`,
+            totalHours.toFixed(1),
+            totalTravelTo,
+            totalTravelFrom,
+            `"${scheduledOrders.length} appointments"`,
+        ].join(',');
+
+        const csvContent = [headers.join(','), ...rows, '', summaryRow].join('\n');
+        const csvBuffer = Buffer.from(csvContent, 'utf-8');
 
         const emailHtml = `
-            <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+            <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 24px;">
                 <div style="background: #0f172a; border-radius: 12px; padding: 24px; color: #e2e8f0; border: 1px solid #1e293b;">
                     <h1 style="color: #10b981; margin: 0 0 8px; font-size: 22px;">📋 Auto-Schedule Report</h1>
                     <p style="color: #94a3b8; margin: 0 0 24px; font-size: 14px;">Target Date: ${targetDate || 'Not specified'}</p>
                     
-                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px;">
-                        <div style="background: #1a2332; border-radius: 8px; padding: 16px; text-align: center; border: 1px solid #2a3a4a;">
-                            <div style="font-size: 28px; font-weight: 700; color: #10b981;">${scheduledOrders.length}</div>
-                            <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">Cases Scheduled</div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px;">
+                        <div style="background: #1a2332; border-radius: 8px; padding: 14px; text-align: center; border: 1px solid #2a3a4a;">
+                            <div style="font-size: 26px; font-weight: 700; color: #10b981;">${scheduledOrders.length}</div>
+                            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Appointments</div>
                         </div>
-                        <div style="background: #1a2332; border-radius: 8px; padding: 16px; text-align: center; border: 1px solid #2a3a4a;">
-                            <div style="font-size: 28px; font-weight: 700; color: #10b981;">${uniqueTechs.size}</div>
-                            <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">Technicians</div>
+                        <div style="background: #1a2332; border-radius: 8px; padding: 14px; text-align: center; border: 1px solid #2a3a4a;">
+                            <div style="font-size: 26px; font-weight: 700; color: #10b981;">${uniqueTechs.size}</div>
+                            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Technicians</div>
                         </div>
-                        <div style="background: #1a2332; border-radius: 8px; padding: 16px; text-align: center; border: 1px solid #2a3a4a;">
-                            <div style="font-size: 28px; font-weight: 700; color: #10b981;">${totalHours.toFixed(1)}</div>
-                            <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">Total Hours</div>
+                        <div style="background: #1a2332; border-radius: 8px; padding: 14px; text-align: center; border: 1px solid #2a3a4a;">
+                            <div style="font-size: 26px; font-weight: 700; color: #10b981;">${avgAptsPerTech}</div>
+                            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Avg Apts/Tech</div>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px;">
+                        <div style="background: #1a2332; border-radius: 8px; padding: 12px; text-align: center; border: 1px solid #2a3a4a;">
+                            <div style="font-size: 20px; font-weight: 700; color: #3b82f6;">${totalHours.toFixed(1)}h</div>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">Work Time</div>
+                        </div>
+                        <div style="background: #1a2332; border-radius: 8px; padding: 12px; text-align: center; border: 1px solid #2a3a4a;">
+                            <div style="font-size: 20px; font-weight: 700; color: #f59e0b;">${(totalTravelMins / 60).toFixed(1)}h</div>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">Travel Time</div>
+                        </div>
+                        <div style="background: #1a2332; border-radius: 8px; padding: 12px; text-align: center; border: 1px solid #2a3a4a;">
+                            <div style="font-size: 20px; font-weight: 700; color: #8b5cf6;">${avgWorkPerTech}h</div>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">Avg Work/Tech</div>
+                        </div>
+                        <div style="background: #1a2332; border-radius: 8px; padding: 12px; text-align: center; border: 1px solid #2a3a4a;">
+                            <div style="font-size: 20px; font-weight: 700; color: #ec4899;">${avgPriority}</div>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">Avg Priority</div>
                         </div>
                     </div>
                     

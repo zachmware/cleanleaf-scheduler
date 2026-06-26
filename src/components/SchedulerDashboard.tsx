@@ -378,6 +378,7 @@ export default function SchedulerDashboard() {
                             assignedTechId: tech.id,
                             startTime: proposedCheckIn.toISOString(),
                             checkInTime: proposedCheckIn.toISOString(),
+                            travelToMins: Math.round(driveToTarget),
                         });
                         proposedCheckIn.setTime(proposedCheckIn.getTime() + (order.durationHours * 60000 * 60));
                     }
@@ -398,6 +399,7 @@ export default function SchedulerDashboard() {
                                     assignedTechId: tech.id,
                                     startTime: proposedCheckIn.toISOString(),
                                     checkInTime: proposedCheckIn.toISOString(),
+                                    travelToMins: 0, // Same location, no travel
                                 });
                                 proposedCheckIn.setTime(bEnd.getTime());
                             }
@@ -468,6 +470,7 @@ export default function SchedulerDashboard() {
                         assignedTechId: tech.id,
                         startTime: proposedCheckIn.toISOString(),
                         checkInTime: proposedCheckIn.toISOString(),
+                        travelToMins: Math.round(driveTo),
                     });
                     assignedIdsSoFar.add(order.id);
                     techAssigned.push(order.id);

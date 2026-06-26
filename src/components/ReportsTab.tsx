@@ -1,11 +1,13 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { WorkOrder, Technician } from '@/data/mockData';
 import * as XLSX from 'xlsx';
+import { BarChart3 } from 'lucide-react';
 
 export default function ReportsTab({ scheduledOrders, technicians }: { scheduledOrders: WorkOrder[], technicians: Technician[] }) {
-  const [reportDayOffset, setReportDayOffset] = useState<number>(0); // 0 = today, 1 = tomorrow, etc.
+  const [reportDayOffset, setReportDayOffset] = useState<number>(0);
   const [regionFilter, setRegionFilter] = useState<string>('ALL');
   const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
+  const [summaryRegions, setSummaryRegions] = useState<string[]>([]);
   
   const today = new Date();
   const targetDate = new Date(today);
@@ -14,7 +16,6 @@ export default function ReportsTab({ scheduledOrders, technicians }: { scheduled
 
   const techMap = new Map(technicians.map(t => [(t.id || '').toLowerCase(), t.name]));
 
-  // Filter orders for the selected target day
   const dailyOrders = useMemo(() => {
     const filtered = scheduledOrders.filter(o => {
       if (!o.startTime) return false;
@@ -22,20 +23,61 @@ export default function ReportsTab({ scheduledOrders, technicians }: { scheduled
       const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       return localDateStr === targetDateStr;
     });
-
-    // Sort by tech, then by start time
     filtered.sort((a, b) => {
       const techA = techMap.get((a.assignedTechId || '').toLowerCase()) || a.assignedTechId || 'Unassigned';
       const techB = techMap.get((b.assignedTechId || '').toLowerCase()) || b.assignedTechId || 'Unassigned';
       if (techA !== techB) return techA.localeCompare(techB);
-      
       const timeA = new Date(a.checkInTime || a.startTime!).getTime();
       const timeB = new Date(b.checkInTime || b.startTime!).getTime();
       return timeA - timeB;
     });
-
     return filtered;
   }, [scheduledOrders, targetDateStr]);
+
+  // All regions available for summary multi-select
+  const allSummaryRegions = useMemo(() =>
+    [...new Set(dailyOrders.map(o => o.region).filter(Boolean))].sort(),
+    [dailyOrders]
+  );
+
+  // Initialize summary regions to all on first load
+  useMemo(() => {
+    if (summaryRegions.length === 0 && allSummaryRegions.length > 0) {
+      setSummaryRegions([...allSummaryRegions]);
+    }
+  }, [allSummaryRegions]);
+
+  // Summary stats filtered by selected regions
+  const summaryStats = useMemo(() => {
+    const filtered = summaryRegions.length > 0
+      ? dailyOrders.filter(o => summaryRegions.includes(o.region || ''))
+      : dailyOrders;
+    
+    const totalAppts = filtered.length;
+    const uniqueTechs = new Set(filtered.map(o => o.assignedTechId).filter(Boolean));
+    const techCount = uniqueTechs.size;
+    const totalPriority = filtered.reduce((s, o) => s + (o.priority || 0), 0);
+    const avgPriority = totalAppts > 0 ? totalPriority / totalAppts : 0;
+    const avgAptsPerTech = techCount > 0 ? totalAppts / techCount : 0;
+    const totalWorkHrs = filtered.reduce((s, o) => s + (o.durationHours || 0), 0);
+    const totalTravelMins = filtered.reduce((s, o) => s + ((o as any).travelToMins || 0), 0);
+    // Estimate travel from as roughly equal to last leg travel to per tech
+    const totalTravelHrs = (totalTravelMins * 2) / 60; // approximate round-trip
+    const avgTravelPerTech = techCount > 0 ? totalTravelHrs / techCount : 0;
+    const avgWorkPerTech = techCount > 0 ? totalWorkHrs / techCount : 0;
+
+    return { totalAppts, techCount, avgPriority, avgAptsPerTech, totalWorkHrs, totalTravelHrs, avgTravelPerTech, avgWorkPerTech };
+  }, [dailyOrders, summaryRegions]);
+
+  const statCard = (value: string, label: string, color: string) => (
+    <div style={{
+      background: 'rgba(26, 35, 50, 0.6)', borderRadius: '10px', padding: '16px',
+      border: '1px solid var(--border-color)', textAlign: 'center', flex: '1 1 120px', minWidth: '120px'
+    }}>
+      <div style={{ fontSize: '1.5rem', fontWeight: 700, color, lineHeight: 1.2 }}>{value}</div>
+      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+    </div>
+  );
 
   // Derive unique regions and priorities from the daily orders
   const uniqueRegions = useMemo(() => 
@@ -154,6 +196,51 @@ export default function ReportsTab({ scheduledOrders, technicians }: { scheduled
                  Tomorrow
               </button>
            </div>
+       </div>
+
+       {/* Summary Dashboard */}
+       <div style={{
+         marginBottom: '16px', padding: '16px',
+         background: 'linear-gradient(135deg, rgba(16,185,129,0.04), rgba(59,130,246,0.04))',
+         borderRadius: '12px', border: '1px solid var(--border-color)'
+       }}>
+         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+             <BarChart3 size={16} style={{ color: 'var(--primary)' }} />
+             <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-main)' }}>Schedule Summary</span>
+           </div>
+           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+             {allSummaryRegions.map(region => {
+               const isActive = summaryRegions.includes(region);
+               return (
+                 <button
+                   key={region}
+                   onClick={() => setSummaryRegions(prev =>
+                     isActive ? prev.filter(r => r !== region) : [...prev, region]
+                   )}
+                   style={{
+                     padding: '3px 10px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 600,
+                     border: `1px solid ${isActive ? 'var(--primary)' : 'var(--border-color)'}`,
+                     background: isActive ? 'rgba(16,185,129,0.15)' : 'transparent',
+                     color: isActive ? 'var(--primary)' : 'var(--text-muted)',
+                     cursor: 'pointer', transition: 'all 0.15s'
+                   }}
+                 >
+                   {region}
+                 </button>
+               );
+             })}
+           </div>
+         </div>
+         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+           {statCard(String(summaryStats.totalAppts), 'Appointments', '#10b981')}
+           {statCard(summaryStats.avgPriority.toFixed(1), 'Avg Priority', '#ec4899')}
+           {statCard(summaryStats.avgAptsPerTech.toFixed(1), 'Avg Apts/Tech', '#8b5cf6')}
+           {statCard(`${summaryStats.totalTravelHrs.toFixed(1)}h`, 'Total Travel', '#f59e0b')}
+           {statCard(`${summaryStats.totalWorkHrs.toFixed(1)}h`, 'Total Work', '#3b82f6')}
+           {statCard(`${summaryStats.avgTravelPerTech.toFixed(1)}h`, 'Avg Travel/Tech', '#f97316')}
+           {statCard(`${summaryStats.avgWorkPerTech.toFixed(1)}h`, 'Avg Work/Tech', '#06b6d4')}
+         </div>
        </div>
 
        {/* Filter bar */}
