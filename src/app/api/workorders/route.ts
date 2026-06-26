@@ -205,60 +205,52 @@ export async function GET() {
         };
 
         // ──────────────────────────────────────────────────────
-        // PHASE 1: Three initial fetches in parallel (< 2s)
+        // PHASE 1: Fetch STAGE6/STAGE6B tickets + scheduled assignments in parallel
         // ──────────────────────────────────────────────────────
-        const [resSide, resSched, resSr] = await Promise.all([
-            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=10000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`, headers, 15000),
+        const [resSched, resSr, resS6b] = await Promise.all([
             safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, headers),
-            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers)
+            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers),
+            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6B"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers)
         ]);
 
-        const dataSide = await safeJson(resSide);
         const dataSched = await safeJson(resSched);
         const dataSr = await safeJson(resSr);
+        const dataS6b = await safeJson(resS6b);
 
-        const allSide: any[] = dataSide?.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
         const allSched: any[] = dataSched?.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
         const allSrs: any[] = dataSr?.['rdfs:member'] || dataSr?.member || [];
-
-        // Build set of STAGE6 SR ticket IDs for filtering
-        const stage6TicketIds = new Set(allSrs.map((sr: any) => String(sr['spi:ticketid'])).filter(Boolean));
-
-        // Also fetch STAGE6B SRs (ready to bundle)
-        const resS6b = await safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6B"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers);
-        const dataS6b = await safeJson(resS6b);
         const allS6b: any[] = dataS6b?.['rdfs:member'] || dataS6b?.member || [];
+
+        // Build sets of STAGE6 and STAGE6B SR ticket IDs
+        const stage6TicketIds = new Set(allSrs.map((sr: any) => String(sr['spi:ticketid'])).filter(Boolean));
         const stage6bTicketIds = new Set(allS6b.map((sr: any) => String(sr['spi:ticketid'])).filter(Boolean));
+        const allStageTicketIds = [...stage6TicketIds, ...stage6bTicketIds];
 
-        // Extract resource lists
-        const rtsResources = allSide.filter((a: any) => a.Attributes?.STATUS?.content === 'None');
+        // Scheduled assignments (for the Gantt view)
         const scheduledResources = allSched.filter((a: any) => a.Attributes?.STATUS?.content !== 'None' && a.Attributes?.SCHEDSTART);
-
-        // Collect ALL wonums we need details for (RTS + Scheduled) 
-        const rtsWonums = [...new Set(rtsResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean))];
         const schedWonums = [...new Set(scheduledResources.map((a: any) => a.Attributes?.WONUM?.content).filter(Boolean))];
 
         // ──────────────────────────────────────────────────────
-        // PHASE 2: Fetch WO details — ALL in one parallel blast
-        // Build two sets of chunk tasks and fire them all at once
+        // PHASE 2: Fetch WO details
+        // RTS: Query NEWWO WOs directly by origrecordid matching STAGE6/STAGE6B tickets
+        // Scheduled: Query by wonum from WOADDITIONALRESOURCE
         // ──────────────────────────────────────────────────────
         const selectParams = 'wonum,status,description,worktype,origrecordid,jobtype_description,wopriority,statusdate,client,vendor,location,estdur,woserviceaddress{description,streetaddress,city,stateprovince,postalcode},locations{region}';
         
-        // Build all chunk URL tasks as functions (not started yet)
         const allChunkFns: (() => Promise<any[]>)[] = [];
 
-        // Chunk tasks for RTS WOs (fetched directly by wonum)
-        for (let i = 0; i < rtsWonums.length; i += 200) {
-            const chunk = rtsWonums.slice(i, i + 200);
-            const wonumStr = chunk.map(w => `"${w}"`).join(',');
-            const whereClause = encodeURIComponent(`wonum in [${wonumStr}]`);
+        // RTS: Fetch NEWWO WOs by origrecordid in chunks of STAGE6/STAGE6B ticket IDs
+        for (let i = 0; i < allStageTicketIds.length; i += 100) {
+            const chunk = allStageTicketIds.slice(i, i + 100);
+            const ticketStr = chunk.map(t => `"${t}"`).join(',');
+            const whereClause = encodeURIComponent(`origrecordid in [${ticketStr}] and status="NEWWO" and woclass="WORKORDER"`);
             const osUrl = `https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapiwodetail?oslc.where=${whereClause}&oslc.select=${encodeURIComponent(selectParams)}&oslc.pageSize=500`;
             allChunkFns.push(() =>
-                safeFetch(osUrl, headers).then(r => safeJson(r)).then(data => data ? (data['rdfs:member'] || data.member || []) : [])
+                safeFetch(osUrl, headers, 12000).then(r => safeJson(r)).then(data => data ? (data['rdfs:member'] || data.member || []) : [])
             );
         }
 
-        // Chunk tasks for Scheduled WOs (by wonum directly)
+        // Scheduled: Fetch by wonum directly
         for (let i = 0; i < schedWonums.length; i += 200) {
             const chunk = schedWonums.slice(i, i + 200);
             const wonumStr = chunk.map(w => `"${w}"`).join(',');
@@ -269,10 +261,10 @@ export async function GET() {
             );
         }
 
-        // Execute in controlled batches of 10 concurrent requests max
+        // Execute in controlled batches of 8 concurrent requests max
         const allChunkResults: any[][] = [];
-        for (let i = 0; i < allChunkFns.length; i += 10) {
-            const batch = allChunkFns.slice(i, i + 10).map(fn => fn());
+        for (let i = 0; i < allChunkFns.length; i += 8) {
+            const batch = allChunkFns.slice(i, i + 8).map(fn => fn());
             const batchResults = await Promise.all(batch);
             allChunkResults.push(...batchResults);
         }
@@ -298,45 +290,31 @@ export async function GET() {
             clusterMap.set(loc, (clusterMap.get(loc) || 0) + 1);
         }
 
-        // Build RTS — one entry per WO, only NEWWO status, only STAGE6/STAGE6B cases
-        // Uses origrecordid to match WO back to its originating SR ticket
-        const seenRtsWonums = new Set<string>();
+        // Build RTS — iterate directly over fetched WOs (already filtered to NEWWO + STAGE6/STAGE6B)
         const stage6Locations = new Set<string>();
         const stage6bCandidates: any[] = [];
+        const rtsWoPlaceholder: any[] = []; // Empty placeholder for processRawRecords assignments param
         
-        for (const res of rtsResources) {
-            const wonum = res.Attributes?.WONUM?.content;
-            if (wonum && finalValidWosMap.has(wonum) && !seenRtsWonums.has(wonum)) {
-                const wo = finalValidWosMap.get(wonum);
-                if (wo['spi:status'] === 'NEWWO') {
-                    const caseNum = wo['spi:origrecordid'] || null;
-                    
-                    // Skip WOs without an origrecordid — can't verify stage
-                    if (!caseNum) {
-                        seenRtsWonums.add(wonum);
-                        continue;
-                    }
-                    
-                    // Check if this is a STAGE6B case — save for bundle pairing
-                    if (stage6bTicketIds.has(caseNum)) {
-                        stage6bCandidates.push(wo);
-                        seenRtsWonums.add(wonum);
-                        continue;
-                    }
-                    
-                    // Only include STAGE6 cases
-                    if (!stage6TicketIds.has(caseNum)) {
-                        seenRtsWonums.add(wonum);
-                        continue;
-                    }
-                    
-                    const processed = processRawRecords([wo], clusterMap, false, rtsResources);
-                    if (processed.length > 0) {
-                        finalRtsOrders.push(processed[0]);
-                        stage6Locations.add(wo['spi:location'] || 'UNKNOWN');
-                    }
+        for (const wo of finalValidWosMap.values()) {
+            // Skip non-NEWWO (scheduled WOs will also be in the map)
+            if (wo['spi:status'] !== 'NEWWO') continue;
+            
+            const caseNum = wo['spi:origrecordid'] || null;
+            if (!caseNum) continue;
+            
+            // Check if this is a STAGE6B case — save for bundle pairing
+            if (stage6bTicketIds.has(caseNum)) {
+                stage6bCandidates.push(wo);
+                continue;
+            }
+            
+            // STAGE6 case — include directly
+            if (stage6TicketIds.has(caseNum)) {
+                const processed = processRawRecords([wo], clusterMap, false, rtsWoPlaceholder);
+                if (processed.length > 0) {
+                    finalRtsOrders.push(processed[0]);
+                    stage6Locations.add(wo['spi:location'] || 'UNKNOWN');
                 }
-                seenRtsWonums.add(wonum);
             }
         }
         
@@ -344,7 +322,7 @@ export async function GET() {
         for (const wo of stage6bCandidates) {
             const loc = wo['spi:location'] || 'UNKNOWN';
             if (stage6Locations.has(loc)) {
-                const processed = processRawRecords([wo], clusterMap, false, rtsResources);
+                const processed = processRawRecords([wo], clusterMap, false, rtsWoPlaceholder);
                 if (processed.length > 0) {
                     processed[0].bundleOnly = true;
                     processed[0].caseType = (processed[0].caseType || '') + ' (Bundle)';
@@ -374,11 +352,9 @@ export async function GET() {
             rtsOrders: finalRtsOrders,
             scheduledOrders: finalSchedOrders,
             _debug: {
-                woadditionalresource_total: allSide.length,
-                rts_resources: rtsResources.length,
-                unique_rts_wonums: rtsWonums.length,
                 stage6_srs: stage6TicketIds.size,
                 stage6b_srs: stage6bTicketIds.size,
+                total_stage_tickets: allStageTicketIds.length,
                 wo_details_fetched: finalValidWosMap.size,
                 rts_output: finalRtsOrders.length,
                 stage6b_bundled: stage6bCandidates.length,
