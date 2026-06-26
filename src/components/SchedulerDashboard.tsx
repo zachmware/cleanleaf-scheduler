@@ -95,6 +95,80 @@ export default function SchedulerDashboard() {
      fetchData();
   }, []);
 
+  // Compute travelToMins for scheduled orders (for Reports tab summary)
+  const travelComputedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (scheduledOrders.length === 0 || technicians.length === 0) return;
+    if (travelComputedRef.current) return;
+    travelComputedRef.current = true;
+    
+    const computeTravelTimes = async () => {
+      // Group orders by tech
+      const techOrders = new Map<string, WorkOrder[]>();
+      for (const order of scheduledOrders) {
+        const techId = order.assignedTechId || '';
+        if (!techId) continue;
+        if (!techOrders.has(techId)) techOrders.set(techId, []);
+        techOrders.get(techId)!.push(order);
+      }
+
+      const updated = [...scheduledOrders];
+      const orderMap = new Map(updated.map(o => [o.id, o]));
+      
+      // For each tech, compute travel for their route
+      const promises: Promise<void>[] = [];
+      for (const [techId, orders] of techOrders) {
+        const tech = technicians.find(t => t.id === techId);
+        if (!tech) continue;
+        
+        // Sort by start time
+        const sorted = [...orders].sort((a, b) => {
+          const ta = a.startTime || a.checkInTime || '';
+          const tb = b.startTime || b.checkInTime || '';
+          return ta.localeCompare(tb);
+        });
+
+        let prevAddress = tech.homeAddress || '';
+        for (const order of sorted) {
+          const dest = order.projectAddress || '';
+          if (!dest || dest.length <= 3 || !prevAddress || prevAddress.length <= 3) {
+            prevAddress = dest;
+            continue;
+          }
+          const origin = prevAddress;
+          prevAddress = dest;
+          
+          const existing = orderMap.get(order.id);
+          if (!existing) continue;
+          
+          promises.push(
+            fetch('/api/distance', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ origin, destination: dest })
+            })
+            .then(r => r.json())
+            .then(data => {
+              if (data && typeof data.minutes === 'number') {
+                existing.travelToMins = data.minutes;
+              }
+            })
+            .catch(() => {})
+          );
+        }
+      }
+      
+      // Process in batches of 10 to avoid flooding the API
+      for (let i = 0; i < promises.length; i += 10) {
+        await Promise.all(promises.slice(i, i + 10));
+      }
+      
+      setScheduledOrders(updated);
+    };
+
+    computeTravelTimes();
+  }, [scheduledOrders.length, technicians.length]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
