@@ -299,21 +299,19 @@ export async function GET() {
         }
 
         // Build RTS — one entry per WO, only NEWWO status, only STAGE6/STAGE6B cases
-        // Cases must have a matching SR in STAGE6 or STAGE6B to be included
+        // Uses origrecordid to match WO back to its originating SR ticket
         const seenRtsWonums = new Set<string>();
-        const stage6Locations = new Set<string>(); // Track locations with STAGE6 cases
-        const stage6bCandidates: any[] = []; // Hold STAGE6B WOs for later filtering
+        const stage6Locations = new Set<string>();
+        const stage6bCandidates: any[] = [];
         
         for (const res of rtsResources) {
             const wonum = res.Attributes?.WONUM?.content;
             if (wonum && finalValidWosMap.has(wonum) && !seenRtsWonums.has(wonum)) {
                 const wo = finalValidWosMap.get(wonum);
                 if (wo['spi:status'] === 'NEWWO') {
-                    const rawDesc = wo['spi:description'] || '';
-                    const caseMatch = rawDesc.match(/\[From Case\s+(\d+)\]/i);
-                    const caseNum = caseMatch ? caseMatch[1] : null;
+                    const caseNum = wo['spi:origrecordid'] || null;
                     
-                    // Skip WOs without a case number — can't verify stage
+                    // Skip WOs without an origrecordid — can't verify stage
                     if (!caseNum) {
                         seenRtsWonums.add(wonum);
                         continue;
