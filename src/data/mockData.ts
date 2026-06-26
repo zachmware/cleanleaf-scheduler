@@ -18,6 +18,8 @@ export interface WorkOrder {
   reportedPriorityText?: string;
   _isAbsoluteEmergency?: boolean;
   bundleOnly?: boolean; // STAGE6B: only schedule when paired with STAGE6 at same location
+  travelToMins?: number; // Travel time in minutes to this appointment
+  customer?: string; // Maximo client/customer name
 }
 
 export interface Technician {
