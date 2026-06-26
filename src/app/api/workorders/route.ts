@@ -170,31 +170,44 @@ export async function GET() {
         };
 
         // ──────────────────────────────────────────────────────
-        // PHASE 1: Fetch STAGE6/STAGE6B tickets, scheduled assignments, and location regions in parallel
+        // PHASE 1: Fetch STAGE6/STAGE6B tickets + scheduled assignments in parallel
         // ──────────────────────────────────────────────────────
-        const [resSched, resSr, resS6b, resLocations] = await Promise.all([
-            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, headers),
-            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers),
-            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6B"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers),
-            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/locations?_format=json&_maxItems=5000&_inclCol=location,region&STATUS=OPERATING`, headers, 15000)
+        const [resSched, resSr, resS6b] = await Promise.all([
+            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, headers, 12000),
+            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers, 12000),
+            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6B"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers, 12000)
         ]);
 
         const dataSched = await safeJson(resSched);
         const dataSr = await safeJson(resSr);
         const dataS6b = await safeJson(resS6b);
-        const dataLocations = await safeJson(resLocations);
 
         const allSched: any[] = dataSched?.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
         const allSrs: any[] = dataSr?.['rdfs:member'] || dataSr?.member || [];
         const allS6b: any[] = dataS6b?.['rdfs:member'] || dataS6b?.member || [];
 
-        // Build location code → region map from LOCATIONS table
+        // Fetch location regions via direct SQL (fast, no pagination limits)
         const locationRegionMap = new Map<string, string>();
-        const allLocations: any[] = dataLocations?.LOCATIONSMboSet?.LOCATIONS || [];
-        for (const loc of allLocations) {
-            const code = loc.Attributes?.LOCATION?.content;
-            const region = loc.Attributes?.REGION?.content;
-            if (code && region) locationRegionMap.set(code, region);
+        try {
+            const sql = require('mssql');
+            const dbConfig = {
+                user: process.env.DB_USER,
+                password: process.env.DB_PASSWORD,
+                server: (process.env.DB_SERVER || '').split(':')[0],
+                port: parseInt((process.env.DB_SERVER || '').split(':')[1] || '1433'),
+                database: process.env.DB_DATABASE,
+                options: { encrypt: false, trustServerCertificate: true }
+            };
+            const pool = await sql.connect(dbConfig);
+            const result = await pool.request().query(
+                `SELECT LOCATION, REGION FROM LOCATIONS WHERE STATUS='OPERATING' AND REGION IS NOT NULL AND REGION != ''`
+            );
+            for (const row of result.recordset) {
+                if (row.LOCATION && row.REGION) locationRegionMap.set(row.LOCATION, row.REGION.trim());
+            }
+            await pool.close();
+        } catch (err: any) {
+            console.error('Location region SQL fetch failed:', err.message);
         }
 
         // Build sets of STAGE6 and STAGE6B SR ticket IDs
