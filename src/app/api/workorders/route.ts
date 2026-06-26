@@ -208,7 +208,7 @@ export async function GET() {
         // PHASE 1: Three initial fetches in parallel (< 2s)
         // ──────────────────────────────────────────────────────
         const [resSide, resSched, resSr] = await Promise.all([
-            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=5000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`, headers),
+            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=10000&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=WOADDITIONALRESOURCEID%20desc`, headers, 15000),
             safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, headers),
             safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers)
         ]);
@@ -298,9 +298,8 @@ export async function GET() {
             clusterMap.set(loc, (clusterMap.get(loc) || 0) + 1);
         }
 
-        // Build RTS — one entry per WO, only NEWWO status
-        // Cases are included if they are in the WOADDITIONALRESOURCE RTS list
-        // STAGE6B cases are marked as bundle-only and paired with same-location STAGE6 cases
+        // Build RTS — one entry per WO, only NEWWO status, only STAGE6/STAGE6B cases
+        // Cases must have a matching SR in STAGE6 or STAGE6B to be included
         const seenRtsWonums = new Set<string>();
         const stage6Locations = new Set<string>(); // Track locations with STAGE6 cases
         const stage6bCandidates: any[] = []; // Hold STAGE6B WOs for later filtering
@@ -314,21 +313,29 @@ export async function GET() {
                     const caseMatch = rawDesc.match(/\[From Case\s+(\d+)\]/i);
                     const caseNum = caseMatch ? caseMatch[1] : null;
                     
+                    // Skip WOs without a case number — can't verify stage
+                    if (!caseNum) {
+                        seenRtsWonums.add(wonum);
+                        continue;
+                    }
+                    
                     // Check if this is a STAGE6B case — save for bundle pairing
-                    if (caseNum && stage6bTicketIds.has(caseNum)) {
+                    if (stage6bTicketIds.has(caseNum)) {
                         stage6bCandidates.push(wo);
                         seenRtsWonums.add(wonum);
                         continue;
                     }
                     
-                    // Include all NEWWO RTS cases (no STAGE6-only filter)
+                    // Only include STAGE6 cases
+                    if (!stage6TicketIds.has(caseNum)) {
+                        seenRtsWonums.add(wonum);
+                        continue;
+                    }
+                    
                     const processed = processRawRecords([wo], clusterMap, false, rtsResources);
                     if (processed.length > 0) {
                         finalRtsOrders.push(processed[0]);
-                        // Track STAGE6 locations for bundle matching
-                        if (caseNum && stage6TicketIds.has(caseNum)) {
-                            stage6Locations.add(wo['spi:location'] || 'UNKNOWN');
-                        }
+                        stage6Locations.add(wo['spi:location'] || 'UNKNOWN');
                     }
                 }
                 seenRtsWonums.add(wonum);
@@ -367,7 +374,18 @@ export async function GET() {
 
         return NextResponse.json({
             rtsOrders: finalRtsOrders,
-            scheduledOrders: finalSchedOrders
+            scheduledOrders: finalSchedOrders,
+            _debug: {
+                woadditionalresource_total: allSide.length,
+                rts_resources: rtsResources.length,
+                unique_rts_wonums: rtsWonums.length,
+                stage6_srs: stage6TicketIds.size,
+                stage6b_srs: stage6bTicketIds.size,
+                wo_details_fetched: finalValidWosMap.size,
+                rts_output: finalRtsOrders.length,
+                stage6b_bundled: stage6bCandidates.length,
+                scheduled_output: finalSchedOrders.length,
+            }
         }, {
             headers: {
                 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0'
