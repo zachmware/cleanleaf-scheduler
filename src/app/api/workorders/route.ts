@@ -2,54 +2,19 @@ import { NextResponse } from 'next/server';
 
 export const revalidate = 0; // Disable cache so Maximo updates are instant
 
-function mapStateToRegion(stateVal: string, cityVal: string): string {
-    const s = stateVal.toUpperCase();
-    const c = cityVal.toUpperCase();
-    
-    // Mid Atlantic: NC, VA, MD, PA, SC, DC
-    if (['NC', 'VA', 'MD', 'PA', 'SC', 'DC', 'NORTH CAROLINA', 'VIRGINIA', 'MARYLAND', 'PENNSYLVANIA', 'SOUTH CAROLINA'].includes(s)) return 'Mid Atlantic';
-    // New England: MA, CT, RI, NH, VT, ME, NY, NJ
-    if (['MA', 'CT', 'RI', 'NH', 'VT', 'ME', 'NY', 'NJ', 'MASSACHUSETTS', 'CONNECTICUT', 'RHODE ISLAND', 'NEW HAMPSHIRE', 'VERMONT', 'MAINE', 'NEW YORK', 'NEW JERSEY'].includes(s)) return 'New England';
-    // California split
-    if (s === 'CA' || s === 'CALIFORNIA') {
-        const norCalCities = [
-            // Bay Area
-            'SAN FRANCISCO', 'SOUTH SAN FRANCISCO', 'OAKLAND', 'SAN JOSE', 'FREMONT', 'HAYWARD', 'SUNNYVALE', 'SANTA CLARA', 'BERKELEY', 'RICHMOND', 'CONCORD', 'ANTIOCH', 'VALLEJO', 'DALY CITY', 'SAN MATEO', 'REDWOOD CITY', 'PALO ALTO', 'MOUNTAIN VIEW', 'MILPITAS', 'PLEASANTON', 'LIVERMORE', 'DUBLIN', 'SAN RAMON', 'WALNUT CREEK', 'DANVILLE', 'MARTINEZ', 'PITTSBURG', 'BRENTWOOD', 'CUPERTINO', 'CAMPBELL', 'LOS GATOS', 'SARATOGA', 'MENLO PARK', 'FOSTER CITY', 'SAN LEANDRO', 'UNION CITY', 'NEWARK', 'ALAMEDA',
-            // Sacramento / Central Valley
-            'SACRAMENTO', 'ROSEVILLE', 'ELK GROVE', 'FOLSOM', 'RANCHO CORDOVA', 'CITRUS HEIGHTS', 'ROCKLIN', 'LINCOLN', 'WOODLAND', 'DAVIS', 'WEST SACRAMENTO', 'STOCKTON', 'MODESTO', 'TRACY', 'MANTECA', 'LODI', 'TURLOCK', 'CERES', 'PATTERSON', 'MERCED', 'MADERA', 'FRESNO', 'VISALIA', 'TULARE', 'HANFORD', 'LEMOORE', 'PORTERVILLE', 'LOS BANOS', 'CHOWCHILLA', 'ATWATER', 'LIVINGSTON',
-            // North Valley / Gold Country
-            'REDDING', 'CHICO', 'YUBA CITY', 'MARYSVILLE', 'OROVILLE', 'RED BLUFF', 'ANDERSON', 'PARADISE', 'GRASS VALLEY', 'AUBURN', 'PLACERVILLE',
-            // North Coast / Wine Country
-            'SANTA ROSA', 'NAPA', 'PETALUMA', 'ROHNERT PARK', 'SONOMA', 'HEALDSBURG', 'UKIAH', 'EUREKA', 'ARCATA', 'FORTUNA', 'CRESCENT CITY', 'BENICIA',
-            // Monterey / Central Coast (above SLO is Nor Cal)
-            'GILROY', 'MORGAN HILL', 'HOLLISTER', 'WATSONVILLE', 'SALINAS', 'MONTEREY', 'SANTA CRUZ', 'HALF MOON BAY', 'PACIFIC GROVE', 'SEASIDE', 'MARINA', 'CARMEL',
-            // East Bay / Contra Costa
-            'CLAYTON', 'ORINDA', 'LAFAYETTE', 'MORAGA', 'SAN PABLO', 'EL CERRITO', 'HERCULES', 'PINOLE', 'BYRON', 'DISCOVERY BAY', 'OAKLEY',
-            // San Joaquin / Central
-            'NEWMAN', 'GUSTINE', 'RIPON', 'ESCALON', 'RIVERBANK', 'OAKDALE', 'SONORA',
-            // Solano
-            'FAIRFIELD', 'VACAVILLE', 'SUISUN CITY', 'DIXON', 'RIO VISTA'
-        ];
-        return norCalCities.some(nc => c.includes(nc)) ? 'Nor Cal' : 'So Cal';
-    }
-    // Southeast: GA, FL, AL, TN, LA, MS
-    if (['GA', 'FL', 'AL', 'TN', 'LA', 'MS', 'GEORGIA', 'FLORIDA', 'ALABAMA', 'TENNESSEE', 'LOUISIANA', 'MISSISSIPPI'].includes(s)) return 'Southeast';
-    
-    return 'Midwest';
-}
+// Region is now sourced directly from the LOCATIONS table REGION field in Maximo
 
-function processRawRecords(members: any[], clusterMap: Map<string, number>, isScheduled: boolean, assignments?: any[]) {
+function processRawRecords(members: any[], clusterMap: Map<string, number>, isScheduled: boolean, assignments?: any[], locationRegionMap?: Map<string, string>) {
     const rawRecords = members.map((wo: any) => {
         const addr = (wo['spi:woserviceaddress'] && wo['spi:woserviceaddress'][0]) || {};
-        const locNode = (wo['spi:locations'] && wo['spi:locations'][0]) || {};
-        const explicitMboRegion = wo._explicitMboRegion;
         
         const rawDesc = wo['spi:description'] || `Work Order ${wo['spi:wonum']}`;
         const cleanDesc = rawDesc.replace(/\[.*?\]/g, '').trim();
-        const stateVal = addr['spi:stateprovince'] || addr['spi:stateprovince_description'] || '';
-        const cityVal = addr['spi:city'] || '';
-        const mappedRegion = mapStateToRegion(stateVal, cityVal);
+        const locationCode = wo['spi:location'] || 'UNKNOWN';
         const descLower = rawDesc.toLowerCase();
+
+        // Region: use the LOCATIONS table REGION field (authoritative)
+        const region = locationRegionMap?.get(locationCode) || 'UNKNOWN';
 
         return {
             id: wo['spi:wonum'],
@@ -61,9 +26,9 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
             urgency: 3, 
             statusdate: wo['spi:statusdate'] || new Date().toISOString(),
             customer: wo['spi:client'] || wo['spi:vendor'] || 'Unknown Client', 
-            location: wo['spi:location'] || 'UNKNOWN',
-            projectName: addr['spi:description'] || wo['spi:location'] || 'Unknown Project',
-            explicitRegion: explicitMboRegion || locNode['spi:region'] || mappedRegion, 
+            location: locationCode,
+            projectName: addr['spi:description'] || locationCode || 'Unknown Project',
+            explicitRegion: region, 
             estdur: wo['spi:estdur'] || 2,
             formattedaddress: [addr['spi:streetaddress'], addr['spi:city'], addr['spi:stateprovince']].filter(Boolean).join(', ') || 'Unknown Address', 
             streetaddress: addr['spi:streetaddress'] || 'Unknown',
@@ -205,21 +170,32 @@ export async function GET() {
         };
 
         // ──────────────────────────────────────────────────────
-        // PHASE 1: Fetch STAGE6/STAGE6B tickets + scheduled assignments in parallel
+        // PHASE 1: Fetch STAGE6/STAGE6B tickets, scheduled assignments, and location regions in parallel
         // ──────────────────────────────────────────────────────
-        const [resSched, resSr, resS6b] = await Promise.all([
+        const [resSched, resSr, resS6b, resLocations] = await Promise.all([
             safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/woadditionalresource?_format=json&_maxItems=800&_inclCol=personid,schedstart,schedfinish,status,wonum&_orderby=SCHEDSTART%20desc`, headers),
             safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers),
-            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6B"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers)
+            safeFetch(`https://cleanleafmax.softwrench2.com/maximo/oslc/os/mxapisr?oslc.where=status="STAGE6B"&oslc.select=ticketid,status&oslc.pageSize=2000`, headers),
+            safeFetch(`https://cleanleafmax.softwrench2.com/maxrest/rest/mbo/locations?_format=json&_maxItems=5000&_inclCol=location,region&STATUS=OPERATING`, headers, 15000)
         ]);
 
         const dataSched = await safeJson(resSched);
         const dataSr = await safeJson(resSr);
         const dataS6b = await safeJson(resS6b);
+        const dataLocations = await safeJson(resLocations);
 
         const allSched: any[] = dataSched?.WOADDITIONALRESOURCEMboSet?.WOADDITIONALRESOURCE || [];
         const allSrs: any[] = dataSr?.['rdfs:member'] || dataSr?.member || [];
         const allS6b: any[] = dataS6b?.['rdfs:member'] || dataS6b?.member || [];
+
+        // Build location code → region map from LOCATIONS table
+        const locationRegionMap = new Map<string, string>();
+        const allLocations: any[] = dataLocations?.LOCATIONSMboSet?.LOCATIONS || [];
+        for (const loc of allLocations) {
+            const code = loc.Attributes?.LOCATION?.content;
+            const region = loc.Attributes?.REGION?.content;
+            if (code && region) locationRegionMap.set(code, region);
+        }
 
         // Build sets of STAGE6 and STAGE6B SR ticket IDs
         const stage6TicketIds = new Set(allSrs.map((sr: any) => String(sr['spi:ticketid'])).filter(Boolean));
@@ -310,7 +286,7 @@ export async function GET() {
             
             // STAGE6 case — include directly
             if (stage6TicketIds.has(caseNum)) {
-                const processed = processRawRecords([wo], clusterMap, false, rtsWoPlaceholder);
+                const processed = processRawRecords([wo], clusterMap, false, rtsWoPlaceholder, locationRegionMap);
                 if (processed.length > 0) {
                     finalRtsOrders.push(processed[0]);
                     stage6Locations.add(wo['spi:location'] || 'UNKNOWN');
@@ -322,7 +298,7 @@ export async function GET() {
         for (const wo of stage6bCandidates) {
             const loc = wo['spi:location'] || 'UNKNOWN';
             if (stage6Locations.has(loc)) {
-                const processed = processRawRecords([wo], clusterMap, false, rtsWoPlaceholder);
+                const processed = processRawRecords([wo], clusterMap, false, rtsWoPlaceholder, locationRegionMap);
                 if (processed.length > 0) {
                     processed[0].bundleOnly = true;
                     processed[0].caseType = (processed[0].caseType || '') + ' (Bundle)';
@@ -339,7 +315,7 @@ export async function GET() {
             const dedupKey = `${wonum}_${techId}`;
             if (wonum && finalValidWosMap.has(wonum) && !seenSchedKeys.has(dedupKey)) {
                 const wo = finalValidWosMap.get(wonum);
-                const processed = processRawRecords([wo], clusterMap, true, [res]);
+                const processed = processRawRecords([wo], clusterMap, true, [res], locationRegionMap);
                 if (processed.length > 0) {
                     processed[0].id = `${wonum}_${techId}`;
                     finalSchedOrders.push(processed[0]);
@@ -355,6 +331,7 @@ export async function GET() {
                 stage6_srs: stage6TicketIds.size,
                 stage6b_srs: stage6bTicketIds.size,
                 total_stage_tickets: allStageTicketIds.length,
+                location_regions_loaded: locationRegionMap.size,
                 wo_details_fetched: finalValidWosMap.size,
                 rts_output: finalRtsOrders.length,
                 stage6b_bundled: stage6bCandidates.length,
