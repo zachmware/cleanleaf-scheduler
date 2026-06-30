@@ -43,8 +43,8 @@ export async function POST(request: Request) {
 
         // Build CSV content (compatible with Excel)
         const headers = [
-            'Work Order', 'Case #', 'Title', 'Case Type', 'Priority', 'Priority Score',
-            'Region', 'Project', 'Address', 'Technician', 'Tech ID', 'Start Time',
+            'Work Order', 'Case #', 'Title', 'Case Type', 'Case Priority', 'Priority Score',
+            'Region', 'Project', 'Address', 'Technician', 'Scheduled Date', 'Start Time',
             'Duration (hrs)', 'Travel To (min)', 'Travel From (min)', 'Status', 'Source'
         ];
 
@@ -74,6 +74,10 @@ export async function POST(request: Request) {
                 if (typeof travelFrom === 'number') totalTravelFrom += travelFrom;
                 totalPriorityScore += order.priority || 0;
 
+                const timeVal = order.startTime || order.checkInTime;
+                const schedDate = timeVal ? new Date(timeVal).toLocaleDateString('en-US', { timeZone: 'America/New_York' }) : '';
+                const schedTime = timeVal ? new Date(timeVal).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }) : '';
+
                 rows.push([
                     order.id?.split('_')[0] || '',
                     order.caseNumber || '',
@@ -85,8 +89,8 @@ export async function POST(request: Request) {
                     `"${(order.projectName || '').replace(/"/g, '""')}"`,
                     `"${(order.projectAddress || '').replace(/"/g, '""')}"`,
                     `"${techName}"`,
-                    order.assignedTechId || '',
-                    (order.startTime || order.checkInTime) ? new Date(order.startTime || order.checkInTime).toLocaleString('en-US', { timeZone: 'America/New_York' }) : '',
+                    schedDate,
+                    schedTime,
                     order.durationHours || '',
                     displayTravelTo,
                     travelFrom,
@@ -114,7 +118,7 @@ export async function POST(request: Request) {
             totalHours.toFixed(1),
             totalTravelTo,
             totalTravelFrom,
-            `"${scheduledOrders.length} appointments"`,
+            `"${scheduledOrders.length} appointments"`, '',
         ].join(',');
 
         const csvContent = [headers.join(','), ...rows, '', summaryRow].join('\n');
