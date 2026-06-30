@@ -454,6 +454,7 @@ export default function SchedulerDashboard() {
                             startTime: proposedCheckIn.toISOString(),
                             checkInTime: proposedCheckIn.toISOString(),
                             travelToMins: Math.round(driveToTarget),
+                            _autoScheduled: true,
                         });
                         proposedCheckIn.setTime(proposedCheckIn.getTime() + (order.durationHours * 60000 * 60));
                     }
@@ -475,6 +476,7 @@ export default function SchedulerDashboard() {
                                     startTime: proposedCheckIn.toISOString(),
                                     checkInTime: proposedCheckIn.toISOString(),
                                     travelToMins: 0, // Same location, no travel
+                                    _autoScheduled: true,
                                 });
                                 proposedCheckIn.setTime(bEnd.getTime());
                             }
@@ -546,6 +548,7 @@ export default function SchedulerDashboard() {
                         startTime: proposedCheckIn.toISOString(),
                         checkInTime: proposedCheckIn.toISOString(),
                         travelToMins: Math.round(driveTo),
+                        _autoScheduled: true,
                     });
                     assignedIdsSoFar.add(order.id);
                     techAssigned.push(order.id);

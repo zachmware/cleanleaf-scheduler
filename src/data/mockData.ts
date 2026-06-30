@@ -20,6 +20,7 @@ export interface WorkOrder {
   bundleOnly?: boolean; // STAGE6B: only schedule when paired with STAGE6 at same location
   travelToMins?: number; // Travel time in minutes to this appointment
   customer?: string; // Maximo client/customer name
+  _autoScheduled?: boolean; // True if assigned by the auto-scheduler (not from Maximo)
 }
 
 export interface Technician {

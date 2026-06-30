@@ -11,15 +11,19 @@ export async function POST(request: Request) {
         const resend = new Resend(apiKey);
         const { scheduledOrders: allOrders, technicians, targetDate } = await request.json();
 
-        // Filter to ONLY appointments on the target date (strict: schedstart or checkInTime or startTime must match)
-        const scheduledOrders = targetDate 
-            ? allOrders.filter((o: any) => {
-                // Check all possible time fields for the target date
-                const times = [o.startTime, o.checkInTime, o.schedstart].filter(Boolean);
-                if (times.length === 0) return false;
-                return times.some((t: string) => String(t).split('T')[0] === targetDate);
-              })
-            : allOrders;
+        // Include TWO sources in the report:
+        // 1. Orders auto-scheduled by the tool (tagged _autoScheduled)
+        // 2. Pre-existing Maximo ARs whose SCHEDSTART falls on the target date
+        const scheduledOrders = allOrders.filter((o: any) => {
+            // Always include auto-scheduled orders from this run
+            if (o._autoScheduled) return true;
+            
+            // For Maximo ARs, only include if their startTime matches the target date
+            if (!targetDate) return true;
+            const timeStr = o.startTime;
+            if (!timeStr) return false;
+            return String(timeStr).split('T')[0] === targetDate;
+        });
 
         if (!scheduledOrders || scheduledOrders.length === 0) {
             return NextResponse.json({ error: `No scheduled appointments found for ${targetDate || 'the target date'}` }, { status: 400 });
@@ -41,7 +45,7 @@ export async function POST(request: Request) {
         const headers = [
             'Work Order', 'Case #', 'Title', 'Case Type', 'Priority', 'Priority Score',
             'Region', 'Project', 'Address', 'Technician', 'Tech ID', 'Start Time',
-            'Duration (hrs)', 'Travel To (min)', 'Travel From (min)', 'Status'
+            'Duration (hrs)', 'Travel To (min)', 'Travel From (min)', 'Status', 'Source'
         ];
 
         let totalTravelTo = 0;
@@ -86,7 +90,8 @@ export async function POST(request: Request) {
                     order.durationHours || '',
                     displayTravelTo,
                     travelFrom,
-                    order.status || ''
+                    order.status || '',
+                    order._autoScheduled ? 'Auto-Scheduler' : 'Maximo'
                 ].join(','));
             });
         }
