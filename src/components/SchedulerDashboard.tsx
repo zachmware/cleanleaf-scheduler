@@ -813,23 +813,10 @@ export default function SchedulerDashboard() {
                     
                     const regionsToUse = [...selectedRegions];
                     scheduledTimerRef.current = setTimeout(async () => {
-                      // Auto-run scheduler
-                      await handleAutoSchedule(regionsToUse);
-                      // Wait a bit for state to settle, then auto-email
-                      setTimeout(async () => {
-                        try {
-                          const res = await fetch('/api/send-schedule', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ scheduledOrders, technicians, targetDate: targetDateStr })
-                          });
-                          const data = await res.json();
-                          console.log('Scheduled email result:', data);
-                        } catch (e) {
-                          console.error('Scheduled email failed:', e);
-                        }
-                        setScheduledTime(null);
-                      }, 5000);
+                      // Auto-run scheduler with email enabled
+                      // (handleAutoSchedule sends the email using the fresh `scheduled` array, not stale React state)
+                      await handleAutoSchedule(regionsToUse, true);
+                      setScheduledTime(null);
                     }, delayMs);
                     
                     setScheduledTime(target.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }));
