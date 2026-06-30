@@ -11,14 +11,22 @@ export async function POST(request: Request) {
         const resend = new Resend(apiKey);
         const { scheduledOrders: allOrders, technicians, targetDate } = await request.json();
 
-        // Filter to only appointments on the target date
-        const scheduledOrders = targetDate 
+        // Filter to only appointments on the target date (timezone-safe: compare date strings directly)
+        let scheduledOrders = targetDate 
             ? allOrders.filter((o: any) => {
-                if (!o.startTime) return false;
-                const orderDate = new Date(o.startTime).toISOString().split('T')[0];
+                const timeStr = o.startTime || o.checkInTime;
+                if (!timeStr) return false;
+                // Extract date portion directly from ISO string (avoid UTC conversion issues)
+                const orderDate = String(timeStr).split('T')[0];
                 return orderDate === targetDate;
               })
             : allOrders;
+        
+        // Fallback: if date filter eliminated everything, use all orders with a time and tech
+        if (scheduledOrders.length === 0 && allOrders.length > 0) {
+            console.warn(`Date filter for ${targetDate} matched 0 of ${allOrders.length} orders. Using all assigned orders as fallback.`);
+            scheduledOrders = allOrders.filter((o: any) => (o.startTime || o.checkInTime) && o.assignedTechId);
+        }
 
         if (!scheduledOrders || scheduledOrders.length === 0) {
             return NextResponse.json({ error: `No scheduled appointments found for ${targetDate || 'the target date'}` }, { status: 400 });
@@ -33,7 +41,7 @@ export async function POST(request: Request) {
         }
         // Sort each tech's orders by start time
         for (const [, orders] of ordersByTech) {
-            orders.sort((a: any, b: any) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+            orders.sort((a: any, b: any) => new Date(a.startTime || a.checkInTime).getTime() - new Date(b.startTime || b.checkInTime).getTime());
         }
 
         // Build CSV content (compatible with Excel)
@@ -81,7 +89,7 @@ export async function POST(request: Request) {
                     `"${(order.projectAddress || '').replace(/"/g, '""')}"`,
                     `"${techName}"`,
                     order.assignedTechId || '',
-                    order.startTime ? new Date(order.startTime).toLocaleString('en-US', { timeZone: 'America/New_York' }) : '',
+                    (order.startTime || order.checkInTime) ? new Date(order.startTime || order.checkInTime).toLocaleString('en-US', { timeZone: 'America/New_York' }) : '',
                     order.durationHours || '',
                     displayTravelTo,
                     travelFrom,

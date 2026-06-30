@@ -32,6 +32,7 @@ export default function SchedulerDashboard() {
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [emailOnComplete, setEmailOnComplete] = useState(true);
+  const [emailStatusMsg, setEmailStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [scheduledTime, setScheduledTime] = useState<string | null>(null);
   const [scheduleTimeInput, setScheduleTimeInput] = useState('17:00');
   const scheduledTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -567,6 +568,7 @@ export default function SchedulerDashboard() {
     if (shouldEmail) {
       try {
         setIsSendingEmail(true);
+        setEmailStatusMsg({ type: 'success', text: '📧 Sending schedule report...' });
         const res = await fetch('/api/send-schedule', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -574,14 +576,16 @@ export default function SchedulerDashboard() {
         });
         const data = await res.json();
         if (data.error) {
-          alert(`Email failed: ${data.error}`);
+          setEmailStatusMsg({ type: 'error', text: `❌ Email failed: ${data.error}` });
         } else {
-          alert(`✅ Schedule report emailed successfully!`);
+          setEmailStatusMsg({ type: 'success', text: `✅ Schedule report emailed successfully! (${data.message || ''})` });
         }
       } catch (e: any) {
-        alert(`Email error: ${e.message}`);
+        setEmailStatusMsg({ type: 'error', text: `❌ Email error: ${e.message}` });
       } finally {
         setIsSendingEmail(false);
+        // Auto-dismiss after 8 seconds
+        setTimeout(() => setEmailStatusMsg(null), 8000);
       }
     }
   };
@@ -641,6 +645,26 @@ export default function SchedulerDashboard() {
            <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
         </div>
       )}
+
+      {/* Email Status Toast */}
+      {emailStatusMsg && (
+        <div style={{
+          position: 'fixed', bottom: '24px', right: '24px',
+          backgroundColor: emailStatusMsg.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+          border: `1px solid ${emailStatusMsg.type === 'success' ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 68, 68, 0.5)'}`,
+          backdropFilter: 'blur(12px)',
+          padding: '12px 20px', borderRadius: '10px',
+          color: emailStatusMsg.type === 'success' ? '#10b981' : '#ef4444',
+          fontSize: '0.9rem', fontWeight: 500,
+          zIndex: 10000, maxWidth: '400px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+          animation: 'fadeInUp 0.3s ease-out',
+          cursor: 'pointer'
+        }} onClick={() => setEmailStatusMsg(null)}>
+          {emailStatusMsg.text}
+        </div>
+      )}
+      <style>{`@keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
 
       {/* Auto-Schedule Configuration Modal */}
       {showAutoScheduleModal && (
