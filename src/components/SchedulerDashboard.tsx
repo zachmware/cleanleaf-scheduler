@@ -245,6 +245,8 @@ export default function SchedulerDashboard() {
     let scheduled = [...scheduledOrders];
     let remainingRts = [...rtsOrders].sort((a,b) => b.priority - a.priority);
 
+   try {
+
     // If regions were selected, filter technicians and RTS orders to only those regions
     let activeTechnicians = technicians;
     if (filterRegions && filterRegions.length > 0) {
@@ -561,11 +563,19 @@ export default function SchedulerDashboard() {
             }
         }
     }
+
+    } catch (schedError: any) {
+      console.error('Auto-schedule error:', schedError);
+      setEmailStatusMsg({ type: 'error', text: `⚠️ Scheduling encountered an error: ${schedError.message}` });
+    }
     
     const assignedIds = new Set(scheduled.map(o => o.id));
     setScheduledOrders(scheduled);
     setRtsOrders(prev => prev.filter(o => !assignedIds.has(o.id)));
     setIsScheduling(false);
+
+    const autoScheduledCount = scheduled.filter(o => o._autoScheduled).length;
+    console.log(`Auto-schedule complete: ${autoScheduledCount} new appointments assigned, shouldEmail=${shouldEmail}`);
 
     // Auto-email if requested
     if (shouldEmail) {
@@ -581,15 +591,18 @@ export default function SchedulerDashboard() {
         if (data.error) {
           setEmailStatusMsg({ type: 'error', text: `❌ Email failed: ${data.error}` });
         } else {
-          setEmailStatusMsg({ type: 'success', text: `✅ Schedule report emailed successfully! (${data.message || ''})` });
+          setEmailStatusMsg({ type: 'success', text: `✅ Report emailed! (${scheduled.filter(o => o._autoScheduled).length} auto-scheduled + Maximo ARs for ${targetDateStr})` });
+          // Auto-dismiss success after 10 seconds
+          setTimeout(() => setEmailStatusMsg(null), 10000);
         }
       } catch (e: any) {
         setEmailStatusMsg({ type: 'error', text: `❌ Email error: ${e.message}` });
       } finally {
         setIsSendingEmail(false);
-        // Auto-dismiss after 8 seconds
-        setTimeout(() => setEmailStatusMsg(null), 8000);
       }
+    } else {
+      setEmailStatusMsg({ type: 'success', text: `✅ Scheduling complete. ${scheduled.filter(o => o._autoScheduled).length} appointments assigned. (Email not requested)` });
+      setTimeout(() => setEmailStatusMsg(null), 8000);
     }
   };
   
