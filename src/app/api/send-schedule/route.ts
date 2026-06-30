@@ -11,22 +11,15 @@ export async function POST(request: Request) {
         const resend = new Resend(apiKey);
         const { scheduledOrders: allOrders, technicians, targetDate } = await request.json();
 
-        // Filter to only appointments on the target date (timezone-safe: compare date strings directly)
-        let scheduledOrders = targetDate 
+        // Filter to ONLY appointments on the target date (strict: schedstart or checkInTime or startTime must match)
+        const scheduledOrders = targetDate 
             ? allOrders.filter((o: any) => {
-                const timeStr = o.startTime || o.checkInTime;
-                if (!timeStr) return false;
-                // Extract date portion directly from ISO string (avoid UTC conversion issues)
-                const orderDate = String(timeStr).split('T')[0];
-                return orderDate === targetDate;
+                // Check all possible time fields for the target date
+                const times = [o.startTime, o.checkInTime, o.schedstart].filter(Boolean);
+                if (times.length === 0) return false;
+                return times.some((t: string) => String(t).split('T')[0] === targetDate);
               })
             : allOrders;
-        
-        // Fallback: if date filter eliminated everything, use all orders with a time and tech
-        if (scheduledOrders.length === 0 && allOrders.length > 0) {
-            console.warn(`Date filter for ${targetDate} matched 0 of ${allOrders.length} orders. Using all assigned orders as fallback.`);
-            scheduledOrders = allOrders.filter((o: any) => (o.startTime || o.checkInTime) && o.assignedTechId);
-        }
 
         if (!scheduledOrders || scheduledOrders.length === 0) {
             return NextResponse.json({ error: `No scheduled appointments found for ${targetDate || 'the target date'}` }, { status: 400 });
