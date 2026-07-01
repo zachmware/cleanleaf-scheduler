@@ -365,13 +365,21 @@ export default function SchedulerDashboard() {
         const eveningLimit = new Date(targetDateObj);
         eveningLimit.setHours(businessEnd, 0, 0, 0);
 
+        // Track assignment counts for load-balancing
+        const techAssignmentCount = new Map<string, number>();
+        for (const tech of regionTechs) {
+            // Count existing Maximo assignments for this tech on the target date
+            const existingCount = scheduled.filter(o => o.assignedTechId === tech.id && o.startTime && (o.checkInTime || o.startTime).split('T')[0] === targetDateStr).length;
+            techAssignmentCount.set(tech.id, existingCount);
+        }
+
         for (const bundle of regionBundles) {
             if (abortScheduling.current) break;
             const destString = bundle[0].projectAddress || bundle[0].projectName || '';
             const durationMins = bundle.reduce((sum, order) => sum + (order.durationHours * 60), 0);
             
             let bestTech = null;
-            let minDrive = 9999;
+            let bestScore = 9999;
             
             for (const tech of regionTechs) {
                 const currentUsed = techUsedMins.get(tech.id) || 0;
@@ -379,8 +387,11 @@ export default function SchedulerDashboard() {
                 if (currentUsed + durationMins < 660) {
                     const startLoc = techStartStates.get(tech.id)!.location;
                     const d = await getCachedDistance(startLoc, destString);
-                    if (d < minDrive) {
-                        minDrive = d;
+                    // Load-balance: penalize techs with more assignments (20min per existing job)
+                    const assignCount = techAssignmentCount.get(tech.id) || 0;
+                    const balancedScore = d + (assignCount * 20);
+                    if (balancedScore < bestScore) {
+                        bestScore = balancedScore;
                         bestTech = tech;
                     }
                 }
@@ -388,7 +399,8 @@ export default function SchedulerDashboard() {
             
             if (bestTech) {
                 techBundles.get(bestTech.id)!.push(bundle);
-                techUsedMins.set(bestTech.id, (techUsedMins.get(bestTech.id) || 0) + durationMins + minDrive + 30);
+                techUsedMins.set(bestTech.id, (techUsedMins.get(bestTech.id) || 0) + durationMins + (bestScore - ((techAssignmentCount.get(bestTech.id) || 0) * 20)) + 30);
+                techAssignmentCount.set(bestTech.id, (techAssignmentCount.get(bestTech.id) || 0) + bundle.length);
             }
         }
 
