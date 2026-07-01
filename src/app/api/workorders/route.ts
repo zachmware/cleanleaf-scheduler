@@ -4,17 +4,20 @@ export const revalidate = 0; // Disable cache so Maximo updates are instant
 
 // Region is now sourced directly from the LOCATIONS table REGION field in Maximo
 
-function processRawRecords(members: any[], clusterMap: Map<string, number>, isScheduled: boolean, assignments?: any[], locationRegionMap?: Map<string, string>) {
+function processRawRecords(members: any[], clusterMap: Map<string, number>, isScheduled: boolean, assignments?: any[], locationRegionMap?: Map<string, string>, locationAddressMap?: Map<string, { street: string; city: string; state: string; zip: string; formatted: string }>) {
     const rawRecords = members.map((wo: any) => {
-        const addr = (wo['spi:woserviceaddress'] && wo['spi:woserviceaddress'][0]) || {};
+        const woAddr = (wo['spi:woserviceaddress'] && wo['spi:woserviceaddress'][0]) || {};
         
         const rawDesc = wo['spi:description'] || `Work Order ${wo['spi:wonum']}`;
         const cleanDesc = rawDesc.replace(/\[.*?\]/g, '').trim();
+        // Address: prefer SERVICEADDRESS table (authoritative) over WOSERVICEADDRESS (potentially stale)
         const locationCode = wo['spi:location'] || 'UNKNOWN';
         const descLower = rawDesc.toLowerCase();
-
-        // Region: use the LOCATIONS table REGION field (authoritative)
         const region = locationRegionMap?.get(locationCode) || 'UNKNOWN';
+        const sqlAddr = locationAddressMap?.get(locationCode);
+        const addr = sqlAddr 
+            ? { streetaddress: sqlAddr.street, city: sqlAddr.city, stateprovince: sqlAddr.state, postalcode: sqlAddr.zip, formattedaddress: sqlAddr.formatted, description: woAddr['spi:description'] || '' }
+            : { streetaddress: woAddr['spi:streetaddress'], city: woAddr['spi:city'], stateprovince: woAddr['spi:stateprovince'], postalcode: woAddr['spi:postalcode'], formattedaddress: null, description: woAddr['spi:description'] || '' };
 
         return {
             id: wo['spi:wonum'],
@@ -27,14 +30,14 @@ function processRawRecords(members: any[], clusterMap: Map<string, number>, isSc
             statusdate: wo['spi:statusdate'] || new Date().toISOString(),
             customer: wo['spi:client'] || wo['spi:vendor'] || 'Unknown Client', 
             location: locationCode,
-            projectName: addr['spi:description'] || locationCode || 'Unknown Project',
+            projectName: addr.description || woAddr['spi:description'] || locationCode || 'Unknown Project',
             explicitRegion: region, 
             estdur: wo['spi:estdur'] || 2,
-            formattedaddress: [addr['spi:streetaddress'], addr['spi:city'], addr['spi:stateprovince']].filter(Boolean).join(', ') || 'Unknown Address', 
-            streetaddress: addr['spi:streetaddress'] || 'Unknown',
-            city: addr['spi:city'] || 'Unknown',
-            stateprovince: addr['spi:stateprovince'] || 'Unknown',
-            postalcode: addr['spi:postalcode'] || 'Unknown'
+            formattedaddress: addr.formattedaddress || [addr.streetaddress, addr.city, addr.stateprovince].filter(Boolean).join(', ') || 'Unknown Address', 
+            streetaddress: addr.streetaddress || 'Unknown',
+            city: addr.city || 'Unknown',
+            stateprovince: addr.stateprovince || 'Unknown',
+            postalcode: addr.postalcode || 'Unknown'
         };
     });
 
@@ -186,8 +189,9 @@ export async function GET() {
         const allSrs: any[] = dataSr?.['rdfs:member'] || dataSr?.member || [];
         const allS6b: any[] = dataS6b?.['rdfs:member'] || dataS6b?.member || [];
 
-        // Fetch location regions via direct SQL (fast, no pagination limits)
+        // Fetch location regions AND service addresses via direct SQL (fast, authoritative)
         const locationRegionMap = new Map<string, string>();
+        const locationAddressMap = new Map<string, { street: string; city: string; state: string; zip: string; formatted: string }>();
         try {
             const sql = require('mssql');
             const dbConfig = {
@@ -199,15 +203,39 @@ export async function GET() {
                 options: { encrypt: false, trustServerCertificate: true }
             };
             const pool = await sql.connect(dbConfig);
-            const result = await pool.request().query(
+            
+            // Query 1: Regions
+            const regionResult = await pool.request().query(
                 `SELECT LOCATION, REGION FROM LOCATIONS WHERE STATUS='OPERATING' AND REGION IS NOT NULL AND REGION != ''`
             );
-            for (const row of result.recordset) {
+            for (const row of regionResult.recordset) {
                 if (row.LOCATION && row.REGION) locationRegionMap.set(row.LOCATION, row.REGION.trim());
             }
+            
+            // Query 2: Service addresses (authoritative, from SERVICEADDRESS table)
+            const addrResult = await pool.request().query(
+                `SELECT L.LOCATION, S.STREETADDRESS, S.CITY, S.STATEPROVINCE, S.POSTALCODE 
+                 FROM LOCATIONS L 
+                 INNER JOIN SERVICEADDRESS S ON L.SADDRESSCODE = S.ADDRESSCODE 
+                 WHERE L.STATUS='OPERATING' AND S.STREETADDRESS IS NOT NULL AND S.STREETADDRESS != ''`
+            );
+            for (const row of addrResult.recordset) {
+                if (row.LOCATION) {
+                    const parts = [row.STREETADDRESS, row.CITY, row.STATEPROVINCE].filter(Boolean);
+                    locationAddressMap.set(row.LOCATION, {
+                        street: row.STREETADDRESS || '',
+                        city: row.CITY || '',
+                        state: row.STATEPROVINCE || '',
+                        zip: row.POSTALCODE || '',
+                        formatted: parts.join(', ') + (row.POSTALCODE ? ` ${row.POSTALCODE}` : '')
+                    });
+                }
+            }
+            
             await pool.close();
+            console.log(`SQL: loaded ${locationRegionMap.size} regions, ${locationAddressMap.size} addresses`);
         } catch (err: any) {
-            console.error('Location region SQL fetch failed:', err.message);
+            console.error('Location SQL fetch failed:', err.message);
         }
 
         // Build sets of STAGE6 and STAGE6B SR ticket IDs
@@ -299,7 +327,7 @@ export async function GET() {
             
             // STAGE6 case — include directly
             if (stage6TicketIds.has(caseNum)) {
-                const processed = processRawRecords([wo], clusterMap, false, rtsWoPlaceholder, locationRegionMap);
+                const processed = processRawRecords([wo], clusterMap, false, rtsWoPlaceholder, locationRegionMap, locationAddressMap);
                 if (processed.length > 0) {
                     finalRtsOrders.push(processed[0]);
                     stage6Locations.add(wo['spi:location'] || 'UNKNOWN');
@@ -311,7 +339,7 @@ export async function GET() {
         for (const wo of stage6bCandidates) {
             const loc = wo['spi:location'] || 'UNKNOWN';
             if (stage6Locations.has(loc)) {
-                const processed = processRawRecords([wo], clusterMap, false, rtsWoPlaceholder, locationRegionMap);
+                const processed = processRawRecords([wo], clusterMap, false, rtsWoPlaceholder, locationRegionMap, locationAddressMap);
                 if (processed.length > 0) {
                     processed[0].bundleOnly = true;
                     processed[0].caseType = (processed[0].caseType || '') + ' (Bundle)';
@@ -328,7 +356,7 @@ export async function GET() {
             const dedupKey = `${wonum}_${techId}`;
             if (wonum && finalValidWosMap.has(wonum) && !seenSchedKeys.has(dedupKey)) {
                 const wo = finalValidWosMap.get(wonum);
-                const processed = processRawRecords([wo], clusterMap, true, [res], locationRegionMap);
+                const processed = processRawRecords([wo], clusterMap, true, [res], locationRegionMap, locationAddressMap);
                 if (processed.length > 0) {
                     processed[0].id = `${wonum}_${techId}`;
                     finalSchedOrders.push(processed[0]);
