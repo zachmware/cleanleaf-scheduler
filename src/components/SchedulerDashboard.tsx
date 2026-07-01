@@ -575,24 +575,26 @@ export default function SchedulerDashboard() {
     setIsScheduling(false);
 
     const autoScheduledCount = scheduled.filter(o => o._autoScheduled).length;
-    console.log(`Auto-schedule complete: ${autoScheduledCount} new appointments assigned, shouldEmail=${shouldEmail}`);
+    const existingMatchCount = scheduled.filter(o => !o._autoScheduled && o.startTime && String(o.startTime).split('T')[0] === targetDateStr).length;
+    console.log(`Auto-schedule complete: ${autoScheduledCount} new + ${existingMatchCount} existing Maximo on ${targetDateStr}, shouldEmail=${shouldEmail}, total scheduled=${scheduled.length}`);
 
     // Auto-email if requested
     if (shouldEmail) {
       try {
         setIsSendingEmail(true);
-        setEmailStatusMsg({ type: 'success', text: '📧 Sending schedule report...' });
+        setEmailStatusMsg({ type: 'success', text: `📧 Sending report... (${autoScheduledCount} auto + ${existingMatchCount} Maximo)` });
+        const payload = JSON.stringify({ scheduledOrders: scheduled, technicians, targetDate: targetDateStr });
+        console.log(`Email payload: ${(payload.length / 1024).toFixed(0)}KB, ${scheduled.length} total orders`);
         const res = await fetch('/api/send-schedule', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scheduledOrders: scheduled, technicians, targetDate: targetDateStr })
+          body: payload
         });
         const data = await res.json();
         if (data.error) {
-          setEmailStatusMsg({ type: 'error', text: `❌ Email failed: ${data.error}` });
+          setEmailStatusMsg({ type: 'error', text: `❌ Email failed (${res.status}): ${data.error}` });
         } else {
-          setEmailStatusMsg({ type: 'success', text: `✅ Report emailed! (${scheduled.filter(o => o._autoScheduled).length} auto-scheduled + Maximo ARs for ${targetDateStr})` });
-          // Auto-dismiss success after 10 seconds
+          setEmailStatusMsg({ type: 'success', text: `✅ Report emailed! (${autoScheduledCount} auto-scheduled + ${existingMatchCount} Maximo ARs for ${targetDateStr})` });
           setTimeout(() => setEmailStatusMsg(null), 10000);
         }
       } catch (e: any) {
@@ -601,7 +603,7 @@ export default function SchedulerDashboard() {
         setIsSendingEmail(false);
       }
     } else {
-      setEmailStatusMsg({ type: 'success', text: `✅ Scheduling complete. ${scheduled.filter(o => o._autoScheduled).length} appointments assigned. (Email not requested)` });
+      setEmailStatusMsg({ type: 'success', text: `✅ Done. ${autoScheduledCount} auto-scheduled + ${existingMatchCount} Maximo for ${targetDateStr}. (Email not requested)` });
       setTimeout(() => setEmailStatusMsg(null), 8000);
     }
   };

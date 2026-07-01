@@ -131,7 +131,7 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, trackIndex = 0, on
         </div>
       )}
 
-      {/* Return home dashed line directly after logic block exclusively targeting Final Agendas */}
+      {/* Return home dashed line directly after logic block */}
       {returnMins !== null && (
         <div style={{
             position: 'absolute',
@@ -143,8 +143,8 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, trackIndex = 0, on
             zIndex: -1,
             pointerEvents: 'none'
         }}>
-           <span style={{ position: 'absolute', top: '-18px', right: '2px', fontSize: '0.65rem', color: '#10b981', whiteSpace: 'nowrap', fontWeight: 600 }}>
-             {returnMins}m -&gt; Home
+           <span style={{ position: 'absolute', top: '-18px', left: '0', fontSize: '0.65rem', color: '#10b981', whiteSpace: 'nowrap', fontWeight: 600 }}>
+             {returnMins}m
            </span>
         </div>
       )}
@@ -152,7 +152,7 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, trackIndex = 0, on
       <div 
          className={`rts-card`} 
          onClick={onClick}
-         title={`${order.title}\nProject: ${order.projectName}\nCase Type: ${order.caseType}\nRegion: ${order.region}\nPriority Level: ${order.reportedPriorityText}\nScore: ${order.priority}\nDuration: ${order.durationHours}hr\nStatus: ${order.status}`}
+         title={`${order.title}\nProject: ${order.projectName}\nCase Type: ${order.caseType}\nRegion: ${order.region}\nPriority Level: ${order.reportedPriorityText}\nScore: ${order.priority}\nDuration: ${order.durationHours}hr\nStatus: ${order.status}${travelMins !== null ? `\nTravel To: ${travelMins} min` : ''}${returnMins !== null ? `\nTravel From: ${returnMins} min` : ''}`}
          style={{ 
             width: '100%', 
             height: '100%', 
@@ -424,6 +424,13 @@ export default function GanttTimeline({ days, offsetDays = 0, technicians, sched
                   
                   <div style={{ color: 'var(--text-muted)' }}>Start Time:</div>
                   <div style={{ color: 'var(--text-main)' }}>{new Date(selectedOrder.startTime || '').toLocaleString()}</div>
+                  
+                  {selectedOrder.travelToMins != null && (
+                    <>
+                      <div style={{ color: 'var(--text-muted)' }}>Travel To:</div>
+                      <div style={{ color: '#94a3b8' }}>{selectedOrder.travelToMins} min</div>
+                    </>
+                  )}
                </div>
 
                <div style={{ marginBottom: '24px' }}>
