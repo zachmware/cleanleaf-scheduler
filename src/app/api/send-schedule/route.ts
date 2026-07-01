@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
+export const maxDuration = 30; // Vercel function timeout (seconds)
+
 export async function POST(request: Request) {
+    console.log('[send-schedule] API called');
     try {
         const apiKey = process.env.RESEND_API_KEY;
         if (!apiKey) {
@@ -10,23 +13,27 @@ export async function POST(request: Request) {
 
         const resend = new Resend(apiKey);
         const { scheduledOrders: allOrders, technicians, targetDate } = await request.json();
+        
+        const autoCount = allOrders.filter((o: any) => o._autoScheduled).length;
+        const matchDateCount = allOrders.filter((o: any) => !o._autoScheduled && o.startTime && String(o.startTime).split('T')[0] === targetDate).length;
+        console.log(`[send-schedule] Received ${allOrders.length} total orders, ${autoCount} auto-scheduled, ${matchDateCount} Maximo matching ${targetDate}`);
 
         // Include TWO sources in the report:
         // 1. Orders auto-scheduled by the tool (tagged _autoScheduled)
         // 2. Pre-existing Maximo ARs whose SCHEDSTART falls on the target date
         const scheduledOrders = allOrders.filter((o: any) => {
-            // Always include auto-scheduled orders from this run
             if (o._autoScheduled) return true;
-            
-            // For Maximo ARs, only include if their startTime matches the target date
             if (!targetDate) return true;
             const timeStr = o.startTime;
             if (!timeStr) return false;
             return String(timeStr).split('T')[0] === targetDate;
         });
 
+        console.log(`[send-schedule] After filter: ${scheduledOrders.length} orders to include in report`);
+
         if (!scheduledOrders || scheduledOrders.length === 0) {
-            return NextResponse.json({ error: `No scheduled appointments found for ${targetDate || 'the target date'}` }, { status: 400 });
+            console.log(`[send-schedule] No appointments found, returning 400`);
+            return NextResponse.json({ error: `No scheduled appointments found for ${targetDate}. (Received ${allOrders.length} total, ${autoCount} auto, ${matchDateCount} date-matched)` }, { status: 400 });
         }
 
         // Group orders by tech for travel time logic

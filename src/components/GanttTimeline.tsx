@@ -172,7 +172,7 @@ function ScheduledBlock({ order, origin, gapMins, returnHome, trackIndex = 0, on
             {order.title}
          </div>
          <div style={{ fontSize: '0.65rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {order.caseType} {order.checkInTime && <span style={{ color: 'var(--primary)' }}>(Checked In)</span>}
+            {order.caseType} {(order.status === 'In Progress' || order.status === 'Checked Out') && <span style={{ color: 'var(--primary)' }}>(Checked In)</span>}
          </div>
       </div>
     </div>
